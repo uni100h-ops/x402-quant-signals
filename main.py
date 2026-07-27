@@ -1,7 +1,10 @@
 import os
 import time
+<<<<<<< HEAD
 import base64
 import json
+=======
+>>>>>>> 83c5fa2e6a785a7307da774b0971a2e02ebf5467
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 import requests
@@ -78,6 +81,7 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
                 }
             ]
         }
+<<<<<<< HEAD
         
         # 1. Codificar el objeto JSON a una cadena Base64
         payment_req_json = json.dumps(payload_402)
@@ -93,3 +97,10 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
     # Si la petición incluye pago verificado, procesar y entregar el servicio
     data = calculate_quant_signals(symbol)
     return {"status": "success", "data": data}
+=======
+        return JSONResponse(status_code=402, content=payload_402)
+    
+    # Si la petición incluye pago verificado, procesar y entregar el servicio
+    data = calculate_quant_signals(symbol)
+    return {"status": "success", "data": data}
+>>>>>>> 83c5fa2e6a785a7307da774b0971a2e02ebf5467
