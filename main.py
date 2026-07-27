@@ -2,7 +2,6 @@ import os
 import time
 import base64
 import json
-import uuid
 import requests
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -16,7 +15,6 @@ ALGORAND_MAINNET_CAIP2 = "algorand:wG322vLX73pM23GxsAR5DQwMGlG52s21"
 USDC_ASA_ID = "31566704"
 
 def calculate_quant_signals(symbol: str):
-    # Ingesta de datos de mercado
     url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol.upper()}USDT"
     res = requests.get(url)
     
@@ -27,7 +25,6 @@ def calculate_quant_signals(symbol: str):
     price = float(data["lastPrice"])
     change_24h = float(data["priceChangePercent"])
     
-    # Lógica cuantitativa
     trend = "BULLISH" if change_24h > 0 else "BEARISH"
     signal = "BUY" if change_24h > 1.5 else ("SELL" if change_24h < -1.5 else "HOLD")
     
@@ -40,18 +37,18 @@ def calculate_quant_signals(symbol: str):
 
 @app.get("/api/v1/market-signal")
 async def get_market_signal(request: Request, symbol: str = "BTC"):
-    # Comprobar si la petición incluye la prueba de pago
     payment_header = request.headers.get("X-PAYMENT-PROOF") or request.headers.get("payment-proof")
     
-    # Si no hay pago, devolvemos el 402 "Payment Required"
     if not payment_header:
-        # Añadimos un nonce (imprescindible en esquemas x402 para validación del cliente)
+        # 1. Forzar HTTPS: Evita que la librería rechace el challenge por desajuste 
+        # de esquemas si el proxy de Render resuelve la petición internamente como HTTP.
+        challenge_url = str(request.url).replace("http://", "https://")
+        
         payload_402 = {
             "x402Version": 2,
             "error": "Payment required",
-            "nonce": str(uuid.uuid4()),  # <-- NUEVO: Evita que el validador del cliente falle
             "resource": {
-                "url": str(request.url),
+                "url": challenge_url,
                 "description": "Señales analíticas y cuantitativas.",
                 "mimeType": "application/json"
             },
@@ -68,16 +65,19 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
             ]
         }
         
-        # Usar Base64 URL-safe y sin padding (el estándar esperado para cabeceras)
+        # 2. Base64 estándar puro: Incluye el padding necesario (=) para que Node.js no falle
         payment_req_json = json.dumps(payload_402)
-        payment_req_b64 = base64.urlsafe_b64encode(payment_req_json.encode()).decode().rstrip('=')
+        payment_req_b64 = base64.b64encode(payment_req_json.encode()).decode("utf-8")
         
+        # 3. Enviamos la cabecera estándar X-402 y la original por retrocompatibilidad
         return JSONResponse(
             status_code=402, 
             content=payload_402,
-            headers={"payment-required": payment_req_b64}
+            headers={
+                "x-402-payment-required": payment_req_b64,
+                "payment-required": payment_req_b64
+            }
         )
     
-    # Si llega hasta aquí, hay pago, procesamos la señal
     data = calculate_quant_signals(symbol)
     return {"status": "success", "data": data}
