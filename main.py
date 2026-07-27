@@ -12,7 +12,8 @@ app = FastAPI(title="AlphaSync Quant Engine API")
 
 @app.get("/api/v1/market-signal")
 async def get_market_signal(request: Request, symbol: str = "BTC"):
-    # ... (mantén tu lógica de comprobación de cabecera aquí igual)
+    # --- ESTA LÍNEA ES LA QUE FALTA ---
+    payment_header = request.headers.get("X-PAYMENT-PROOF") or request.headers.get("payment-proof")
     
     if not payment_header:
         # ... (mantén tu payload_402 aquí igual)
