@@ -69,10 +69,11 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
         payment_req_json = json.dumps(payload_402)
         payment_req_b64 = base64.b64encode(payment_req_json.encode()).decode().replace('\n', '')
         
+        # Retornar 402 con la cabecera estándar X-402-Payment-Required
         return JSONResponse(
             status_code=402, 
             content=payload_402,
-            headers={"payment-required": payment_req_b64}
+            headers={"X-402-Payment-Required": payment_req_b64}
         )
     
     # Si llega hasta aquí, hay pago, procesamos la señal
