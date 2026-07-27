@@ -1,6 +1,5 @@
 import os
 import time
-import base64
 import json
 import requests
 from fastapi import FastAPI, Request
@@ -15,7 +14,6 @@ ALGORAND_MAINNET_CAIP2 = "algorand:wG322vLX73pM23GxsAR5DQwMGlG52s21"
 USDC_ASA_ID = "31566704"
 
 def calculate_quant_signals(symbol: str):
-    # Ingesta de datos de mercado
     url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol.upper()}USDT"
     res = requests.get(url)
     
@@ -26,7 +24,6 @@ def calculate_quant_signals(symbol: str):
     price = float(data["lastPrice"])
     change_24h = float(data["priceChangePercent"])
     
-    # Lógica cuantitativa
     trend = "BULLISH" if change_24h > 0 else "BEARISH"
     signal = "BUY" if change_24h > 1.5 else ("SELL" if change_24h < -1.5 else "HOLD")
     
@@ -65,15 +62,10 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
             ]
         }
         
-        # Codificar Base64 para la cabecera
-        payment_req_json = json.dumps(payload_402)
-        payment_req_b64 = base64.b64encode(payment_req_json.encode()).decode().replace('\n', '')
-        
-        # Retornar 402 con la cabecera estándar X-402-Payment-Required
+        # Eliminamos la cabecera personalizada para evitar conflictos de parseo
         return JSONResponse(
             status_code=402, 
-            content=payload_402,
-            headers={"X-402-Payment-Required": payment_req_b64}
+            content=payload_402
         )
     
     # Si llega hasta aquí, hay pago, procesamos la señal
