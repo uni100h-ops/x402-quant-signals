@@ -40,10 +40,16 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
     print("=== CABECERAS RECIBIDAS ===")
     print(request.headers)
     print("===========================")
-    payment_header = request.headers.get("X-PAYMENT-PROOF") or request.headers.get("payment-proof")
+    
+    # 1. FIX: Capturar la cabecera real que inyecta @x402/fetch en el reintento
+    payment_header = (
+        request.headers.get("payment-signature") or 
+        request.headers.get("X-PAYMENT-PROOF") or 
+        request.headers.get("payment-proof")
+    )
     
     if not payment_header:
-        # 1. Forzar HTTPS: Evita que la librería rechace el challenge por desajuste 
+        # 2. Forzar HTTPS: Evita que la librería rechace el challenge por desajuste 
         # de esquemas si el proxy de Render resuelve la petición internamente como HTTP.
         challenge_url = str(request.url).replace("http://", "https://")
         
@@ -68,11 +74,11 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
             ]
         }
         
-        # 2. Base64 estándar puro: Incluye el padding necesario (=) para que Node.js no falle
+        # Base64 estándar puro: Incluye el padding necesario (=) para que Node.js no falle
         payment_req_json = json.dumps(payload_402)
         payment_req_b64 = base64.b64encode(payment_req_json.encode()).decode("utf-8")
         
-        # 3. Enviamos la cabecera estándar X-402 y la original por retrocompatibilidad
+        # Enviamos la cabecera estándar X-402 y la original por retrocompatibilidad
         return JSONResponse(
             status_code=402, 
             content=payload_402,
@@ -81,6 +87,13 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
                 "payment-required": payment_req_b64
             }
         )
+    
+    # 3. FIX: Mitigación de la Condición de Carrera (Race Condition).
+    # Como el comprobante llega en microsegundos, forzamos al servidor a esperar
+    # unos segundos para asegurar que la transacción exista en la blockchain.
+    print("Comprobante de pago recibido. Esperando confirmación de red Algorand...")
+    time.sleep(4)
+    print("Tiempo de red transcurrido. Sirviendo señal al cliente...")
     
     data = calculate_quant_signals(symbol)
     return {"status": "success", "data": data}
