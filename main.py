@@ -37,6 +37,9 @@ def calculate_quant_signals(symbol: str):
 
 @app.get("/api/v1/market-signal")
 async def get_market_signal(request: Request, symbol: str = "BTC"):
+    print("=== CABECERAS RECIBIDAS ===")
+    print(request.headers)
+    print("===========================")
     payment_header = request.headers.get("X-PAYMENT-PROOF") or request.headers.get("payment-proof")
     
     if not payment_header:
