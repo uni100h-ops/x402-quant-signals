@@ -12,7 +12,7 @@ app = FastAPI(title="AlphaSync Quant Engine API")
 PAYTO_ADDRESS = "SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI"
 PRICE_USDC = "10000"
 
-# 1. CAIP-2 OFICIAL corregido para Algorand Mainnet en GoPlausible
+# CAIP-2 OFICIAL para Algorand Mainnet requerido por GoPlausible
 ALGORAND_MAINNET_CAIP2 = "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8="
 USDC_ASA_ID = "31566704"
 
@@ -42,9 +42,11 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
     print("=== CABECERAS RECIBIDAS ===")
     print(request.headers)
     print("===========================")
+    
     payment_header = request.headers.get("X-PAYMENT-PROOF") or request.headers.get("payment-proof")
     
     if not payment_header:
+        # 1. Forzar HTTPS
         challenge_url = str(request.url).replace("http://", "https://")
         
         payload_402 = {
@@ -55,7 +57,7 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
                 "description": "Señales analíticas y cuantitativas.",
                 "mimeType": "application/json"
             },
-            # 2. Ruteo obligatorio hacia el Facilitador oficial del concurso
+            # 2. Ruteo hacia el Facilitador oficial del hackathon
             "facilitatorUrl": "https://facilitator.goplausible.xyz",
             "accepts": [
                 {
@@ -68,17 +70,19 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
                     "extra": {"name": "USDC", "version": "1"}
                 }
             ],
-            # 3. Bloque de extensión oficial para el Discovery/Leaderboard de Bazaar
+            # 3. Metadatos Bazaar para aparecer en el Leaderboard
             "extensions": {
                 "bazaar": {
-                    "tags": ["x402-global-challenge", "quant-signals"]
+                    "tags": ["x402-global-challenge"]
                 }
             }
         }
         
+        # Generar base64 puro
         payment_req_json = json.dumps(payload_402)
         payment_req_b64 = base64.b64encode(payment_req_json.encode()).decode("utf-8")
         
+        # Enviar cabeceras
         return JSONResponse(
             status_code=402, 
             content=payload_402,
@@ -88,5 +92,6 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
             }
         )
     
+    # Si hay pago, procesar la señal
     data = calculate_quant_signals(symbol)
     return {"status": "success", "data": data}
