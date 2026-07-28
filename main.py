@@ -11,7 +11,9 @@ app = FastAPI(title="AlphaSync Quant Engine API")
 # --- CONFIGURACIÓN ALGORAND ---
 PAYTO_ADDRESS = "SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI"
 PRICE_USDC = "10000"
-ALGORAND_MAINNET_CAIP2 = "algorand:wG322vLX73pM23GxsAR5DQwMGlG52s21"
+
+# 1. CAIP-2 OFICIAL corregido para Algorand Mainnet en GoPlausible
+ALGORAND_MAINNET_CAIP2 = "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8="
 USDC_ASA_ID = "31566704"
 
 def calculate_quant_signals(symbol: str):
@@ -40,17 +42,9 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
     print("=== CABECERAS RECIBIDAS ===")
     print(request.headers)
     print("===========================")
-    
-    # 1. FIX: Capturar la cabecera real que inyecta @x402/fetch en el reintento
-    payment_header = (
-        request.headers.get("payment-signature") or 
-        request.headers.get("X-PAYMENT-PROOF") or 
-        request.headers.get("payment-proof")
-    )
+    payment_header = request.headers.get("X-PAYMENT-PROOF") or request.headers.get("payment-proof")
     
     if not payment_header:
-        # 2. Forzar HTTPS: Evita que la librería rechace el challenge por desajuste 
-        # de esquemas si el proxy de Render resuelve la petición internamente como HTTP.
         challenge_url = str(request.url).replace("http://", "https://")
         
         payload_402 = {
@@ -61,6 +55,8 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
                 "description": "Señales analíticas y cuantitativas.",
                 "mimeType": "application/json"
             },
+            # 2. Ruteo obligatorio hacia el Facilitador oficial del concurso
+            "facilitatorUrl": "https://facilitator.goplausible.xyz",
             "accepts": [
                 {
                     "scheme": "exact",
@@ -69,16 +65,20 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
                     "amount": PRICE_USDC,
                     "payTo": PAYTO_ADDRESS,
                     "maxTimeoutSeconds": 300,
-                    "extra": {"name": "USDC", "version": "1", "tag": "x402-global-challenge"}
+                    "extra": {"name": "USDC", "version": "1"}
                 }
-            ]
+            ],
+            # 3. Bloque de extensión oficial para el Discovery/Leaderboard de Bazaar
+            "extensions": {
+                "bazaar": {
+                    "tags": ["x402-global-challenge", "quant-signals"]
+                }
+            }
         }
         
-        # Base64 estándar puro: Incluye el padding necesario (=) para que Node.js no falle
         payment_req_json = json.dumps(payload_402)
         payment_req_b64 = base64.b64encode(payment_req_json.encode()).decode("utf-8")
         
-        # Enviamos la cabecera estándar X-402 y la original por retrocompatibilidad
         return JSONResponse(
             status_code=402, 
             content=payload_402,
@@ -87,13 +87,6 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
                 "payment-required": payment_req_b64
             }
         )
-    
-    # 3. FIX: Mitigación de la Condición de Carrera (Race Condition).
-    # Como el comprobante llega en microsegundos, forzamos al servidor a esperar
-    # unos segundos para asegurar que la transacción exista en la blockchain.
-    print("Comprobante de pago recibido. Esperando confirmación de red Algorand...")
-    time.sleep(4)
-    print("Tiempo de red transcurrido. Sirviendo señal al cliente...")
     
     data = calculate_quant_signals(symbol)
     return {"status": "success", "data": data}
