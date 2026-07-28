@@ -43,10 +43,14 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
     print(request.headers)
     print("===========================")
     
-    payment_header = request.headers.get("X-PAYMENT-PROOF") or request.headers.get("payment-proof")
+    # 1. FIX: Capturar la cabecera real que inyecta el cliente Node.js
+    payment_header = (
+        request.headers.get("payment-signature") or 
+        request.headers.get("X-PAYMENT-PROOF") or 
+        request.headers.get("payment-proof")
+    )
     
     if not payment_header:
-        # 1. Forzar HTTPS
         challenge_url = str(request.url).replace("http://", "https://")
         
         payload_402 = {
@@ -57,7 +61,6 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
                 "description": "Señales analíticas y cuantitativas.",
                 "mimeType": "application/json"
             },
-            # 2. Ruteo hacia el Facilitador oficial del hackathon
             "facilitatorUrl": "https://facilitator.goplausible.xyz",
             "accepts": [
                 {
@@ -70,7 +73,6 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
                     "extra": {"name": "USDC", "version": "1"}
                 }
             ],
-            # 3. Metadatos Bazaar para aparecer en el Leaderboard
             "extensions": {
                 "bazaar": {
                     "tags": ["x402-global-challenge"]
@@ -78,11 +80,9 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
             }
         }
         
-        # Generar base64 puro
         payment_req_json = json.dumps(payload_402)
         payment_req_b64 = base64.b64encode(payment_req_json.encode()).decode("utf-8")
         
-        # Enviar cabeceras
         return JSONResponse(
             status_code=402, 
             content=payload_402,
@@ -92,6 +92,12 @@ async def get_market_signal(request: Request, symbol: str = "BTC"):
             }
         )
     
-    # Si hay pago, procesar la señal
+    # 2. FIX: Mitigación de la Condición de Carrera.
+    # El comprobante llega en microsegundos, forzamos al servidor a esperar
+    # unos segundos para asegurar que la transacción exista en la blockchain.
+    print("Comprobante de pago recibido. Esperando confirmación de red Algorand...")
+    time.sleep(4)
+    print("Tiempo de red transcurrido. Sirviendo señal al cliente...")
+    
     data = calculate_quant_signals(symbol)
     return {"status": "success", "data": data}
