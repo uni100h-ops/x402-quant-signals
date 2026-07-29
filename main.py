@@ -16,21 +16,21 @@ app.add_middleware(
     expose_headers=["x402-payment-required"]
 )
 
-# === CONFIGURACIÓN DE TU COBRO ===
-PAYTO_ADDRESS = "TU_WALLET_SERVIDOR_AQUI" # Tu wallet de recepcion
-ASSET_ID = "31566704"                     # USDC en Algorand
-PRICE = "100000"                          # Precio en micro-unidades (ej: 0.1 USDC)
-NETWORK = "algorand-mainnet"
+# === CONFIGURACIÓN OFICIAL DE TU COBRO ===
+PAYTO_ADDRESS = "SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI" # Pon aquí tu wallet de recepción
+USDC_ASA_ID = "31566704"
+ALGORAND_MAINNET_CAIP2 = "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8="
+PRICE = "100000"                          # 0.1 USDC en micro-unidades
 
 @app.get("/api/v1/market-signal")
-async def get_protected_data(request: Request, response: Response, symbol: str = "BTC"):
+async def get_market_signal(symbol: str, request: Request, response: Response):
     auth_header = request.headers.get("Authorization")
 
-    # 1. SI NO HAY PAGO -> Devolver HTTP 402
+    # 1. SI NO HAY PAGO -> Devolver HTTP 402 con los requerimientos en formato CAIP-2
     if not auth_header or not auth_header.startswith("x402 "):
         payment_requirements = {
-            "network": NETWORK,
-            "asset": ASSET_ID,
+            "network": ALGORAND_MAINNET_CAIP2,
+            "asset": USDC_ASA_ID,
             "amount": PRICE,
             "payTo": PAYTO_ADDRESS,
             "tag": "x402-global-challenge"
@@ -43,7 +43,7 @@ async def get_protected_data(request: Request, response: Response, symbol: str =
         response.headers["x402-payment-required"] = encoded_req
         return {"error": "Payment Required"}
 
-    # 2. SI HAY PAGO -> Validar con GoPlausible
+    # 2. SI HAY PAGO -> Interceptar y validar con el facilitador GoPlausible
     try:
         token = auth_header.split(" ")[1]
         padded_token = token + "=" * ((4 - len(token) % 4) % 4)
@@ -59,22 +59,26 @@ async def get_protected_data(request: Request, response: Response, symbol: str =
         facilitator_res = requests.post(verify_url, json=facilitator_payload)
         
         if facilitator_res.status_code != 200:
-            raise HTTPException(status_code=502, detail="Error con GoPlausible")
+            raise HTTPException(status_code=502, detail="Error de comunicación con GoPlausible")
             
         verify_result = facilitator_res.json()
         
         if not verify_result.get("isValid"):
-            raise HTTPException(status_code=403, detail=f"Pago invalido: {verify_result.get('invalidReason')}")
+            raise HTTPException(status_code=403, detail=f"Pago inválido: {verify_result.get('invalidReason')}")
 
-        # 3. PAGO VALIDADO
+        # 3. PAGO VALIDADO E INDEXADO -> Entregar la señal de mercado
         return {
+            "symbol": symbol,
             "status": "success",
-            "message": "Transaccion verificada e indexada.",
-            "data": "Tus datos aqui"
+            "message": "Transacción verificada e indexada en GoPlausible.",
+            "data": {
+                "signal": "BUY",
+                "price": 65000.00
+            }
         }
         
     except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Token no es JSON valido")
+        raise HTTPException(status_code=400, detail="El token x402 no es un JSON válido")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
