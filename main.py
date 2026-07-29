@@ -1,7 +1,10 @@
+Aquí tienes el código completo y corregido, listo para copiar y pegar directamente en tu archivo `main.py`. He limpiado el error tipográfico de la línea 4 y he mantenido intacta toda la lógica que ya te funcionaba, incluyendo la corrección del `resource` con su coma correspondiente para que entres en el ranking de GoPlausible.
+
+```python
 import base64
 import json
 import requests
-import tracebackfacilitator_payload =
+import traceback
 import time
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -155,3 +158,5 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8080)
+
+```
