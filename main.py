@@ -75,9 +75,24 @@ async def get_market_signal(symbol: str, request: Request, response: Response):
         x402_data = json.loads(decoded_bytes)
         print("-> Payload decodificado correctamente")
         
+        # 1. Extraemos el payload del cliente (dependiendo de la versión de la librería, 
+        # puede venir bajo la clave 'payload', 'paymentPayload' o ser el objeto entero)
+        client_payload = x402_data.get("paymentPayload") or x402_data.get("payload") or x402_data
+        
+        # 2. Inyectamos los requerimientos EXACTOS que nuestro servidor exige.
+        # Es vital pasarle a GoPlausible el network (ALGORAND_MAINNET_CAIP2) para que sepa dónde buscar.
+        server_requirements = [{
+            "scheme": "exact",
+            "network": ALGORAND_MAINNET_CAIP2,
+            "asset": USDC_ASA_ID,
+            "amount": PRICE,
+            "payTo": PAYTO_ADDRESS,
+            "tag": "x402-global-challenge"
+        }]
+        
         facilitator_payload = {
-            "paymentPayload": x402_data.get("paymentPayload", {}),
-            "paymentRequirements": x402_data.get("paymentRequirements", {})
+            "paymentPayload": client_payload,
+            "paymentRequirements": server_requirements
         }
         
         verify_url = "https://facilitator.goplausible.xyz/verify"
