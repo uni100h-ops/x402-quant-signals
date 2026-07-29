@@ -29,12 +29,14 @@ PRICE = "100000"
 
 @app.get("/api/v1/market-signal")
 async def get_market_signal(symbol: str, request: Request, response: Response):
+    # Intentamos capturar el header en cualquiera de sus formas comunes
     auth_header = (
         request.headers.get("Authorization") or 
         request.headers.get("PAYMENT-SIGNATURE") or 
         request.headers.get("X-PAYMENT")
     )
 
+    # 1. SI NO HAY PAGO: DEVOLVER EL 402 CHALLENGE
     if not auth_header:
         print("-> Petición sin pago: Enviando 402 Challenge")
         requirement_item = {
@@ -59,14 +61,16 @@ async def get_market_signal(symbol: str, request: Request, response: Response):
         response.headers["payment-required"] = encoded_req
         return payment_challenge
 
+    # 2. SI HAY PAGO: INICIAR EL PROCESO DE VERIFICACIÓN
     print("\n=== NUEVO INTENTO DE PAGO RECIBIDO ===")
-    print(f"Header crudo detectado: {auth_header[:50]}...") # Solo imprimimos el principio por si es muy largo
+    print(f"Header crudo detectado: {auth_header[:50]}...")
 
     try:
+        # Limpieza del token
         token = auth_header.replace("x402 ", "").replace("Bearer ", "").strip()
         padded_token = token + "=" * ((4 - len(token) % 4) % 4)
         
-        # Intento robusto de decodificación Base64 (UrlSafe primero, Estándar después)
+        # Decodificación Base64 (UrlSafe primero, Estándar después)
         try:
             decoded_bytes = base64.urlsafe_b64decode(padded_token)
         except:
@@ -75,9 +79,10 @@ async def get_market_signal(symbol: str, request: Request, response: Response):
         x402_data = json.loads(decoded_bytes)
         print("-> Payload decodificado correctamente")
         
+        # Extracción segura del payload del cliente
         client_payload = x402_data.get("paymentPayload") or x402_data.get("payload") or x402_data
         
-        # EL CAMBIO ESTÁ AQUÍ: Quitamos los corchetes [] para que sea un objeto (dict) directo.
+        # Definición estricta de las reglas del servidor (Objeto directo, no array)
         server_requirements = {
             "scheme": "exact",
             "network": ALGORAND_MAINNET_CAIP2,
@@ -87,16 +92,18 @@ async def get_market_signal(symbol: str, request: Request, response: Response):
             "tag": "x402-global-challenge"
         }
         
+        # Construcción del payload final para GoPlausible incluyendo la versión x402
         facilitator_payload = {
+            "x402Version": 2,
             "paymentPayload": client_payload,
             "paymentRequirements": server_requirements
         }
         
         verify_url = "https://facilitator.goplausible.xyz/verify"
         
-        # Este print nos salvará la vida si vuelve a fallar, nos mostrará exactamente qué le estamos mandando.
         print(f"-> Enviando JSON a GoPlausible: {json.dumps(facilitator_payload)}")
         
+        # Petición HTTP a GoPlausible
         facilitator_res = requests.post(verify_url, json=facilitator_payload)
         print(f"-> Respuesta GoPlausible Status: {facilitator_res.status_code}")
         
@@ -110,6 +117,7 @@ async def get_market_signal(symbol: str, request: Request, response: Response):
         if not verify_result.get("isValid"):
             raise HTTPException(status_code=403, detail=f"Pago inválido: {verify_result.get('invalidReason')}")
 
+        # 3. PAGO VERIFICADO CORRECTAMENTE: SERVIR EL RECURSO
         print("-> ✅ PAGO ACEPTADO. Enviando señal.")
         return {
             "symbol": symbol,
@@ -122,14 +130,14 @@ async def get_market_signal(symbol: str, request: Request, response: Response):
         }
         
     except HTTPException as http_exc:
-        # NO enmascarar los errores HTTP controlados (403, 502)
+        # Dejar pasar los errores controlados (403, 502, 400) para que lleguen al cliente
         raise http_exc
     except json.JSONDecodeError:
         print("-> Error: El token no era un JSON válido tras decodificar el Base64")
         raise HTTPException(status_code=400, detail="El token x402 no es un JSON válido")
     except Exception as e:
         print("💥 ERROR INTERNO CRÍTICO DETECTADO:")
-        traceback.print_exc() # Esto imprimirá la línea exacta del fallo en Render
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 if __name__ == "__main__":
