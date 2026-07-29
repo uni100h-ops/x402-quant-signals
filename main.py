@@ -22,8 +22,8 @@ ASSET_ID = "31566704"                     # USDC en Algorand
 PRICE = "100000"                          # Precio en micro-unidades (ej: 0.1 USDC)
 NETWORK = "algorand-mainnet"
 
-@app.get("/api/data")
-async def get_protected_data(request: Request, response: Response):
+@app.get("/api/v1/market-signal")
+async def get_protected_data(request: Request, response: Response, symbol: str = "BTC"):
     auth_header = request.headers.get("Authorization")
 
     # 1. SI NO HAY PAGO -> Devolver HTTP 402
