@@ -114,6 +114,7 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         facilitator_payload = {
             "paymentPayload": x402_data, 
             "paymentRequirements": server_requirements
+            "resource": str(request.url) 
         }
         
         verify_url = "https://facilitator.goplausible.xyz/verify"
