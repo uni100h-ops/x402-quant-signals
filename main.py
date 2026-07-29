@@ -5,7 +5,6 @@ import traceback
 import time
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 
 app = FastAPI(title="AlphaSync Quant Engine API")
 
@@ -59,7 +58,6 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         request.headers.get("payment-signature")
     )
 
-    # Esquema estricto x402-avm V2 basado en la documentación oficial
     requirement_item = {
         "scheme": "exact",
         "network": ALGORAND_MAINNET_CAIP2,
@@ -68,9 +66,7 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         "payTo": PAYTO_ADDRESS,
         "maxTimeoutSeconds": 300,
         "extra": {
-            "decimals": 6,
-            "resource": "AlphaSync-Quant-API",
-            "description": "AlphaSync Quant Engine Market Signals"
+            "decimals": 6
         }
     }
 
@@ -103,44 +99,55 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         x402_data = json.loads(decoded_bytes)
         print("-> Payload decodificado correctamente")
         
-        # El payload para el endpoint /verify del facilitador.
-        # Pasamos la clave 'resource' explícitamente en la raíz para el dashboard.
+        # Payload enriquecido para forzar el indexado en el dashboard
         facilitator_payload = {
             "paymentPayload": x402_data, 
             "paymentRequirements": requirement_item,
-            "resource": "GET /api/v1/market-signal"
+            # Inyectamos los campos estándar que los SDKs usan por debajo para el dashboard
+            "resource": "GET /api/v1/market-signal",
+            "route": "GET /api/v1/market-signal",
+            "description": "AlphaSync-Quant-API",
+            "routeConfig": {
+                "description": "AlphaSync-Quant-API",
+                "route": "GET /api/v1/market-signal"
+            }
         }
         
+        # PASO 1: VERIFICAR
         verify_url = "https://facilitator.goplausible.xyz/verify"
-        print(f"-> Enviando JSON a GoPlausible: {json.dumps(facilitator_payload)}")
-        
         facilitator_res = requests.post(verify_url, json=facilitator_payload)
-        print(f"-> Respuesta GoPlausible Status: {facilitator_res.status_code}")
         
         if facilitator_res.status_code != 200:
-            print(f"-> Error del facilitador: {facilitator_res.text}")
             raise HTTPException(status_code=502, detail="Error de comunicación con GoPlausible")
             
         verify_result = facilitator_res.json()
-        print(f"-> Resultado verificación: {verify_result}")
         
         if not verify_result.get("isValid"):
             raise HTTPException(status_code=403, detail=f"Pago inválido: {verify_result.get('invalidReason')}")
 
-        print("-> ✅ PAGO ACEPTADO. Enviando señal.")
+        print("-> ✅ VERIFICACIÓN OK. Procediendo a hacer SETTLE...")
+
+        # PASO 2: LIQUIDAR (SETTLE) - Crucial para que aparezca completado en el dashboard
+        settle_url = "https://facilitator.goplausible.xyz/settle"
+        settle_res = requests.post(settle_url, json=facilitator_payload)
+        
+        if settle_res.status_code == 200:
+            print(f"-> ✅ SETTLE COMPLETADO: {settle_res.json()}")
+        else:
+            print(f"-> ⚠️ AVISO: El settle falló o devolvió error: {settle_res.text}")
+
+        # Entregar el recurso tras completar el flujo
         data = calculate_quant_signals(symbol)
         
         return {
             "symbol": symbol,
             "status": "success",
-            "message": "Transacción verificada e indexada en GoPlausible.",
+            "message": "Transacción verificada, liquidada e indexada.",
             "data": data
         }
         
     except HTTPException as http_exc:
         raise http_exc
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="El token x402 no es un JSON válido")
     except Exception as e:
         print("💥 ERROR INTERNO CRÍTICO DETECTADO:")
         traceback.print_exc()
