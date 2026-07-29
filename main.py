@@ -1,103 +1,57 @@
-import os
-import time
-import base64
-import json
-import requests
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+import { X402Client } from '@goplausible/x402-client';
+import algosdk from 'algosdk';
 
-app = FastAPI(title="AlphaSync Quant Engine API")
+// === CONFIGURACIÓN DE WALLET DEL CLIENTE ===
+// IMPORTANTE: Esta debe ser una wallet DISTINTA a PAYTO_ADDRESS del main.py
+const clientMnemonic = "TU_MNEMONIC_DE_CLIENTE_AQUI_25_PALABRAS";
+const clientAccount = algosdk.mnemonicToSecretKey(clientMnemonic);
 
-# --- CONFIGURACIÓN ALGORAND ---
-PAYTO_ADDRESS = "SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI"
-PRICE_USDC = "10000"
+// Inicializar cliente x402 apuntando al facilitador
+const x402Client = new X402Client({
+    facilitatorUrl: "https://facilitator.goplausible.xyz"
+});
 
-# CAIP-2 OFICIAL para Algorand Mainnet requerido por GoPlausible
-ALGORAND_MAINNET_CAIP2 = "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8="
-USDC_ASA_ID = "31566704"
+// URL de tu servidor FastAPI (Render o Local)
+const API_URL = "http://127.0.0.1:8080/api/data";
 
-def calculate_quant_signals(symbol: str):
-    url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol.upper()}USDT"
-    res = requests.get(url)
+async function makeRequest() {
+    console.log(`Iniciando petición a ${API_URL}...`);
     
-    if res.status_code != 200:
-        return {"error": "Símbolo no encontrado"}
-    
-    data = res.json()
-    price = float(data["lastPrice"])
-    change_24h = float(data["priceChangePercent"])
-    
-    trend = "BULLISH" if change_24h > 0 else "BEARISH"
-    signal = "BUY" if change_24h > 1.5 else ("SELL" if change_24h < -1.5 else "HOLD")
-    
-    return {
-        "asset": f"{symbol.upper()}/USDT",
-        "price": price,
-        "recommendation": signal,
-        "timestamp": int(time.time())
-    }
-
-@app.get("/api/v1/market-signal")
-async def get_market_signal(request: Request, symbol: str = "BTC"):
-    print("=== CABECERAS RECIBIDAS ===")
-    print(request.headers)
-    print("===========================")
-    
-    # 1. FIX: Capturar la cabecera real que inyecta el cliente Node.js
-    payment_header = (
-        request.headers.get("payment-signature") or 
-        request.headers.get("X-PAYMENT-PROOF") or 
-        request.headers.get("payment-proof")
-    )
-    
-    if not payment_header:
-        challenge_url = str(request.url).replace("http://", "https://")
-        
-        payload_402 = {
-            "x402Version": 2,
-            "error": "Payment required",
-            "resource": {
-                "url": challenge_url,
-                "description": "Señales analíticas y cuantitativas.",
-                "mimeType": "application/json"
+    try {
+        // 1. Configurar los parámetros de la transacción con la wallet del cliente
+        const signerParams = {
+            network: 'algorand-mainnet',
+            signer: async (txns) => {
+                const signedTxns = txns.map(txnStr => {
+                    const txn = algosdk.decodeUnsignedTransaction(Buffer.from(txnStr, 'base64'));
+                    const signedTxn = txn.signTxn(clientAccount.sk);
+                    return Buffer.from(signedTxn).toString('base64');
+                });
+                return signedTxns;
             },
-            "facilitatorUrl": "https://facilitator.goplausible.xyz",
-            "accepts": [
-                {
-                    "scheme": "exact",
-                    "network": ALGORAND_MAINNET_CAIP2,
-                    "asset": USDC_ASA_ID,
-                    "amount": PRICE_USDC,
-                    "payTo": PAYTO_ADDRESS,
-                    "maxTimeoutSeconds": 300,
-                    "extra": {"name": "USDC", "version": "1"}
-                }
-            ],
-            "extensions": {
-                "bazaar": {
-                    "tags": ["x402-global-challenge"]
-                }
+            sender: clientAccount.addr
+        };
+
+        // 2. Usar el cliente x402 para envolver el fetch estándar. 
+        // Esto intercepta el 402, procesa el pago on-chain y reintenta con el token.
+        const response = await x402Client.fetch(API_URL, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
             }
+        }, signerParams);
+
+        if (!response.ok) {
+            throw new Error(`Error en el servidor: ${response.status} - ${response.statusText}`);
         }
-        
-        payment_req_json = json.dumps(payload_402)
-        payment_req_b64 = base64.b64encode(payment_req_json.encode()).decode("utf-8")
-        
-        return JSONResponse(
-            status_code=402, 
-            content=payload_402,
-            headers={
-                "x-402-payment-required": payment_req_b64,
-                "payment-required": payment_req_b64
-            }
-        )
-    
-    # 2. FIX: Mitigación de la Condición de Carrera.
-    # El comprobante llega en microsegundos, forzamos al servidor a esperar
-    # unos segundos para asegurar que la transacción exista en la blockchain.
-    print("Comprobante de pago recibido. Esperando confirmación de red Algorand...")
-    time.sleep(4)
-    print("Tiempo de red transcurrido. Sirviendo señal al cliente...")
-    
-    data = calculate_quant_signals(symbol)
-    return {"status": "success", "data": data}
+
+        const data = await response.json();
+        console.log("✅ Éxito. Datos recibidos del servidor:");
+        console.log(JSON.stringify(data, null, 2));
+
+    } catch (error) {
+        console.error("❌ Fallo en la ejecución del cliente:", error.message);
+    }
+}
+
+makeRequest();
