@@ -1,7 +1,7 @@
 import base64
 import json
 import requests
-import traceback
+import tracebackfacilitator_payload =
 import time
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -113,7 +113,7 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         # ya que contiene su propio "x402Version". No se extraen ni modifican campos.
         facilitator_payload = {
             "paymentPayload": x402_data, 
-            "paymentRequirements": server_requirements
+            "paymentRequirements": server_requirements,  
             "resource": str(request.url) 
         }
         
