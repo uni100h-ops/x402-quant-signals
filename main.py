@@ -20,7 +20,7 @@ app.add_middleware(
 PAYTO_ADDRESS = "SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI" # Pon aquí tu wallet de recepción
 USDC_ASA_ID = "31566704"
 ALGORAND_MAINNET_CAIP2 = "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8="
-PRICE = "100000"                          # 0.1 USDC en micro-unidades
+PRICE = "100000"                                  # 0.1 USDC en micro-unidades
 
 @app.get("/api/v1/market-signal")
 async def get_market_signal(symbol: str, request: Request, response: Response):
@@ -29,6 +29,7 @@ async def get_market_signal(symbol: str, request: Request, response: Response):
     # 1. SI NO HAY PAGO -> Devolver HTTP 402 con los requerimientos en formato CAIP-2
     if not auth_header or not auth_header.startswith("x402 "):
         payment_requirements = [{
+            "scheme": "exact",
             "network": ALGORAND_MAINNET_CAIP2,
             "asset": USDC_ASA_ID,
             "amount": PRICE,
