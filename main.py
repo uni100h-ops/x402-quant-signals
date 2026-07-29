@@ -51,6 +51,12 @@ def calculate_quant_signals(symbol: str):
 
 @app.get("/api/v1/market-signal")
 async def get_market_signal(request: Request, response: Response, symbol: str = "BTC"):
+    
+    # Construcción estricta de la URL absoluta para el Leaderboard (Ej: https://x402-quant-signals.onrender.com/api/v1/market-signal)
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "x402-quant-signals.onrender.com"
+    proto = request.headers.get("x-forwarded-proto") or "https"
+    public_url = f"{proto}://{host}{request.url.path}"
+
     auth_header = (
         request.headers.get("Authorization") or 
         request.headers.get("PAYMENT-SIGNATURE") or 
@@ -99,23 +105,24 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         x402_data = json.loads(decoded_bytes)
         print("-> Payload decodificado correctamente")
         
-        # Payload enriquecido para forzar el indexado en el dashboard
+        # Payload con el formato exacto de URL absoluta que el dashboard procesa
         facilitator_payload = {
             "paymentPayload": x402_data, 
             "paymentRequirements": requirement_item,
-            # Inyectamos los campos estándar que los SDKs usan por debajo para el dashboard
-            "resource": "GET /api/v1/market-signal",
-            "route": "GET /api/v1/market-signal",
-            "description": "AlphaSync-Quant-API",
-            "routeConfig": {
-                "description": "AlphaSync-Quant-API",
-                "route": "GET /api/v1/market-signal"
-            }
+            "resource": public_url,
+            "description": "AlphaSync Quant Engine"
+        }
+
+        # Cabeceras simulando el SDK oficial para que GoPlausible lea el origen
+        fac_headers = {
+            "Content-Type": "application/json",
+            "Origin": f"{proto}://{host}",
+            "Referer": public_url
         }
         
         # PASO 1: VERIFICAR
         verify_url = "https://facilitator.goplausible.xyz/verify"
-        facilitator_res = requests.post(verify_url, json=facilitator_payload)
+        facilitator_res = requests.post(verify_url, json=facilitator_payload, headers=fac_headers)
         
         if facilitator_res.status_code != 200:
             raise HTTPException(status_code=502, detail="Error de comunicación con GoPlausible")
@@ -127,16 +134,15 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
 
         print("-> ✅ VERIFICACIÓN OK. Procediendo a hacer SETTLE...")
 
-        # PASO 2: LIQUIDAR (SETTLE) - Crucial para que aparezca completado en el dashboard
+        # PASO 2: LIQUIDAR (SETTLE)
         settle_url = "https://facilitator.goplausible.xyz/settle"
-        settle_res = requests.post(settle_url, json=facilitator_payload)
+        settle_res = requests.post(settle_url, json=facilitator_payload, headers=fac_headers)
         
         if settle_res.status_code == 200:
             print(f"-> ✅ SETTLE COMPLETADO: {settle_res.json()}")
         else:
             print(f"-> ⚠️ AVISO: El settle falló o devolvió error: {settle_res.text}")
 
-        # Entregar el recurso tras completar el flujo
         data = calculate_quant_signals(symbol)
         
         return {
