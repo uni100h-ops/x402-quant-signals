@@ -52,6 +52,12 @@ def calculate_quant_signals(symbol: str):
 
 @app.get("/api/v1/market-signal")
 async def get_market_signal(request: Request, response: Response, symbol: str = "BTC"):
+    
+    # Reconstruir la URL pública real usando las cabeceras del proxy de Render
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "localhost"
+    proto = request.headers.get("x-forwarded-proto") or "https"
+    public_url = f"{proto}://{host}{request.url.path}"
+    
     # Capturar la cabecera real
     auth_header = (
         request.headers.get("Authorization") or 
@@ -108,13 +114,11 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
             "tag": "x402-global-challenge"
         }
         
-        # CORRECCIÓN DEFINITIVA: 
-        # El protocolo exige pasar el PaymentPayload intacto del cliente, 
-        # ya que contiene su propio "x402Version". No se extraen ni modifican campos.
+        # Enviamos la URL pública reconstruida en lugar de request.url
         facilitator_payload = {
             "paymentPayload": x402_data, 
             "paymentRequirements": server_requirements,  
-            "resource": str(request.url) 
+            "resource": public_url 
         }
         
         verify_url = "https://facilitator.goplausible.xyz/verify"
