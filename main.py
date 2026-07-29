@@ -28,13 +28,13 @@ async def get_market_signal(symbol: str, request: Request, response: Response):
 
     # 1. SI NO HAY PAGO -> Devolver HTTP 402 con los requerimientos en formato CAIP-2
     if not auth_header or not auth_header.startswith("x402 "):
-        payment_requirements = {
+        payment_requirements = [{
             "network": ALGORAND_MAINNET_CAIP2,
             "asset": USDC_ASA_ID,
             "amount": PRICE,
             "payTo": PAYTO_ADDRESS,
             "tag": "x402-global-challenge"
-        }
+        }]
         
         req_json = json.dumps(payment_requirements, separators=(',', ':'))
         encoded_req = base64.urlsafe_b64encode(req_json.encode()).decode().rstrip("=")
