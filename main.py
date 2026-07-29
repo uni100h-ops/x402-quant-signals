@@ -2,10 +2,12 @@ import base64
 import json
 import requests
 import traceback
+import time
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-app = FastAPI(title="x402 Server")
+app = FastAPI(title="AlphaSync Quant Engine API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,16 +29,37 @@ USDC_ASA_ID = "31566704"
 ALGORAND_MAINNET_CAIP2 = "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8="
 PRICE = "100000"
 
+def calculate_quant_signals(symbol: str):
+    url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol.upper()}USDT"
+    res = requests.get(url)
+    
+    if res.status_code != 200:
+        return {"error": "Símbolo no encontrado"}
+    
+    data = res.json()
+    price = float(data["lastPrice"])
+    change_24h = float(data["priceChangePercent"])
+    
+    trend = "BULLISH" if change_24h > 0 else "BEARISH"
+    signal = "BUY" if change_24h > 1.5 else ("SELL" if change_24h < -1.5 else "HOLD")
+    
+    return {
+        "asset": f"{symbol.upper()}/USDT",
+        "price": price,
+        "recommendation": signal,
+        "timestamp": int(time.time())
+    }
+
 @app.get("/api/v1/market-signal")
-async def get_market_signal(symbol: str, request: Request, response: Response):
-    # Intentamos capturar el header en cualquiera de sus formas comunes
+async def get_market_signal(request: Request, response: Response, symbol: str = "BTC"):
+    # Capturar la cabecera real
     auth_header = (
         request.headers.get("Authorization") or 
         request.headers.get("PAYMENT-SIGNATURE") or 
-        request.headers.get("X-PAYMENT")
+        request.headers.get("X-PAYMENT") or
+        request.headers.get("payment-signature")
     )
 
-    # 1. SI NO HAY PAGO: DEVOLVER EL 402 CHALLENGE
     if not auth_header:
         print("-> Petición sin pago: Enviando 402 Challenge")
         requirement_item = {
@@ -61,16 +84,13 @@ async def get_market_signal(symbol: str, request: Request, response: Response):
         response.headers["payment-required"] = encoded_req
         return payment_challenge
 
-    # 2. SI HAY PAGO: INICIAR EL PROCESO DE VERIFICACIÓN
     print("\n=== NUEVO INTENTO DE PAGO RECIBIDO ===")
-    print(f"Header crudo detectado: {auth_header[:50]}...")
-
+    
     try:
-        # Limpieza del token
+        # Decodificación segura del Base64
         token = auth_header.replace("x402 ", "").replace("Bearer ", "").strip()
         padded_token = token + "=" * ((4 - len(token) % 4) % 4)
         
-        # Decodificación Base64 (UrlSafe primero, Estándar después)
         try:
             decoded_bytes = base64.urlsafe_b64decode(padded_token)
         except:
@@ -79,10 +99,6 @@ async def get_market_signal(symbol: str, request: Request, response: Response):
         x402_data = json.loads(decoded_bytes)
         print("-> Payload decodificado correctamente")
         
-        # Extracción segura del payload del cliente
-        client_payload = x402_data.get("paymentPayload") or x402_data.get("payload") or x402_data
-        
-        # Definición estricta de las reglas del servidor (Objeto directo, no array)
         server_requirements = {
             "scheme": "exact",
             "network": ALGORAND_MAINNET_CAIP2,
@@ -92,18 +108,17 @@ async def get_market_signal(symbol: str, request: Request, response: Response):
             "tag": "x402-global-challenge"
         }
         
-        # Construcción del payload final para GoPlausible incluyendo la versión x402
+        # CORRECCIÓN DEFINITIVA: 
+        # El protocolo exige pasar el PaymentPayload intacto del cliente, 
+        # ya que contiene su propio "x402Version". No se extraen ni modifican campos.
         facilitator_payload = {
-            "x402Version": 2,
-            "paymentPayload": client_payload,
+            "paymentPayload": x402_data, 
             "paymentRequirements": server_requirements
         }
         
         verify_url = "https://facilitator.goplausible.xyz/verify"
-        
         print(f"-> Enviando JSON a GoPlausible: {json.dumps(facilitator_payload)}")
         
-        # Petición HTTP a GoPlausible
         facilitator_res = requests.post(verify_url, json=facilitator_payload)
         print(f"-> Respuesta GoPlausible Status: {facilitator_res.status_code}")
         
@@ -117,23 +132,19 @@ async def get_market_signal(symbol: str, request: Request, response: Response):
         if not verify_result.get("isValid"):
             raise HTTPException(status_code=403, detail=f"Pago inválido: {verify_result.get('invalidReason')}")
 
-        # 3. PAGO VERIFICADO CORRECTAMENTE: SERVIR EL RECURSO
         print("-> ✅ PAGO ACEPTADO. Enviando señal.")
+        data = calculate_quant_signals(symbol)
+        
         return {
             "symbol": symbol,
             "status": "success",
             "message": "Transacción verificada e indexada en GoPlausible.",
-            "data": {
-                "signal": "BUY",
-                "price": 65000.00
-            }
+            "data": data
         }
         
     except HTTPException as http_exc:
-        # Dejar pasar los errores controlados (403, 502, 400) para que lleguen al cliente
         raise http_exc
     except json.JSONDecodeError:
-        print("-> Error: El token no era un JSON válido tras decodificar el Base64")
         raise HTTPException(status_code=400, detail="El token x402 no es un JSON válido")
     except Exception as e:
         print("💥 ERROR INTERNO CRÍTICO DETECTADO:")
