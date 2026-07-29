@@ -52,7 +52,6 @@ def calculate_quant_signals(symbol: str):
 
 @app.get("/api/v1/market-signal")
 async def get_market_signal(request: Request, response: Response, symbol: str = "BTC"):
-    # Capturar la cabecera real
     auth_header = (
         request.headers.get("Authorization") or 
         request.headers.get("PAYMENT-SIGNATURE") or 
@@ -60,18 +59,23 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         request.headers.get("payment-signature")
     )
 
+    # Esquema estricto x402-avm V2 basado en la documentación oficial
+    requirement_item = {
+        "scheme": "exact",
+        "network": ALGORAND_MAINNET_CAIP2,
+        "asset": USDC_ASA_ID,
+        "amount": PRICE,
+        "payTo": PAYTO_ADDRESS,
+        "maxTimeoutSeconds": 300,
+        "extra": {
+            "decimals": 6,
+            "resource": "AlphaSync-Quant-API",
+            "description": "AlphaSync Quant Engine Market Signals"
+        }
+    }
+
     if not auth_header:
         print("-> Petición sin pago: Enviando 402 Challenge")
-        requirement_item = {
-            "scheme": "exact",
-            "network": ALGORAND_MAINNET_CAIP2,
-            "asset": USDC_ASA_ID,
-            "amount": PRICE,
-            "payTo": PAYTO_ADDRESS,
-            "tag": "x402-global-challenge",
-            "resource": "AlphaSync-Quant-API"  # Añadido directamente al requisito
-        }
-
         payment_challenge = {
             "x402Version": 2,
             "accepts": [requirement_item]
@@ -88,7 +92,6 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
     print("\n=== NUEVO INTENTO DE PAGO RECIBIDO ===")
     
     try:
-        # Decodificación segura del Base64
         token = auth_header.replace("x402 ", "").replace("Bearer ", "").strip()
         padded_token = token + "=" * ((4 - len(token) % 4) % 4)
         
@@ -100,20 +103,12 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         x402_data = json.loads(decoded_bytes)
         print("-> Payload decodificado correctamente")
         
-        server_requirements = {
-            "scheme": "exact",
-            "network": ALGORAND_MAINNET_CAIP2,
-            "asset": USDC_ASA_ID,
-            "amount": PRICE,
-            "payTo": PAYTO_ADDRESS,
-            "tag": "x402-global-challenge",
-            "resource": "AlphaSync-Quant-API"  # Añadido para que haga match con lo que se pidió
-        }
-        
-        # El payload ahora va limpio, sin el invento del request.url
+        # El payload para el endpoint /verify del facilitador.
+        # Pasamos la clave 'resource' explícitamente en la raíz para el dashboard.
         facilitator_payload = {
             "paymentPayload": x402_data, 
-            "paymentRequirements": server_requirements
+            "paymentRequirements": requirement_item,
+            "resource": "GET /api/v1/market-signal"
         }
         
         verify_url = "https://facilitator.goplausible.xyz/verify"
