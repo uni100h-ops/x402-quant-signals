@@ -13,40 +13,62 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["x402-payment-required"]
+    expose_headers=[
+        "x402-payment-required",
+        "payment-required",
+        "Payment-Required",
+        "PAYMENT-RESPONSE",
+        "X-PAYMENT-RESPONSE"
+    ]
 )
 
 # === CONFIGURACIÓN OFICIAL DE TU COBRO ===
-PAYTO_ADDRESS = "SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI" # Pon aquí tu wallet de recepción
+PAYTO_ADDRESS = "SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI"
 USDC_ASA_ID = "31566704"
 ALGORAND_MAINNET_CAIP2 = "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8="
 PRICE = "100000"                                  # 0.1 USDC en micro-unidades
 
 @app.get("/api/v1/market-signal")
 async def get_market_signal(symbol: str, request: Request, response: Response):
-    auth_header = request.headers.get("Authorization")
+    # Intentamos leer la firma/autorización desde cualquiera de las cabeceras estándar
+    auth_header = (
+        request.headers.get("Authorization") or 
+        request.headers.get("PAYMENT-SIGNATURE") or 
+        request.headers.get("X-PAYMENT")
+    )
 
-    # 1. SI NO HAY PAGO -> Devolver HTTP 402 con los requerimientos en formato CAIP-2
-    if not auth_header or not auth_header.startswith("x402 "):
-        payment_requirements = [{
+    # 1. SI NO HAY PAGO -> Devolver HTTP 402 estructurado para @x402/core
+    if not auth_header:
+        requirement_item = {
             "scheme": "exact",
             "network": ALGORAND_MAINNET_CAIP2,
             "asset": USDC_ASA_ID,
             "amount": PRICE,
             "payTo": PAYTO_ADDRESS,
             "tag": "x402-global-challenge"
-        }]
+        }
+
+        # Estructura compatible V1 / V2
+        payment_challenge = {
+            "x402Version": 2,
+            "accepts": [requirement_item]
+        }
         
-        req_json = json.dumps(payment_requirements, separators=(',', ':'))
+        req_json = json.dumps(payment_challenge, separators=(',', ':'))
         encoded_req = base64.urlsafe_b64encode(req_json.encode()).decode().rstrip("=")
         
         response.status_code = 402
+        # Ponemos la cabecera en los 2 nombres comunes (compatibilidad antigua y nueva)
         response.headers["x402-payment-required"] = encoded_req
-        return {"error": "Payment Required"}
+        response.headers["payment-required"] = encoded_req
+        
+        # IMPORTANTE: Devolvemos la estructura completa en el BODY
+        # para que httpClient.getPaymentRequiredResponse(getHeader, body) lo lea bien.
+        return payment_challenge
 
-    # 2. SI HAY PAGO -> Interceptar y validar con el facilitador GoPlausible
+    # 2. SI HAY PAGO -> Interceptamos y validamos con GoPlausible
     try:
-        token = auth_header.split(" ")[1]
+        token = auth_header.replace("x402 ", "").replace("Bearer ", "").strip()
         padded_token = token + "=" * ((4 - len(token) % 4) % 4)
         decoded_bytes = base64.urlsafe_b64decode(padded_token)
         x402_data = json.loads(decoded_bytes)
@@ -67,7 +89,7 @@ async def get_market_signal(symbol: str, request: Request, response: Response):
         if not verify_result.get("isValid"):
             raise HTTPException(status_code=403, detail=f"Pago inválido: {verify_result.get('invalidReason')}")
 
-        # 3. PAGO VALIDADO E INDEXADO -> Entregar la señal de mercado
+        # 3. PAGO VALIDADO -> Entregar la señal de mercado
         return {
             "symbol": symbol,
             "status": "success",
