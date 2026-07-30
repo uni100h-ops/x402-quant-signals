@@ -82,7 +82,8 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
                     "method": "GET"
                 }
             }
-    }
+     }
+   }  
 
     if not auth_header:
         print("-> Petición sin pago: Enviando 402 Challenge")
