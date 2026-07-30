@@ -74,7 +74,14 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         "extra": {
             "decimals": 6,
             "tag": "x402-global-challenge"  # <-- AQUÍ ES DONDE LO EXIGE LA DOCUMENTACIÓN
-        }
+        },
+        "extensions": {
+            "bazaar": {
+                "info": {
+                    "description": "AlphaSync Quant Engine Market Signals",
+                    "method": "GET"
+                }
+            }
     }
 
     if not auth_header:
