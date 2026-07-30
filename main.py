@@ -63,7 +63,7 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         request.headers.get("payment-signature")
     )
 
-    # REVERSIÓN: Estructura limpia y estricta para no romper la firma del cliente
+    # Configuración estricta según las reglas del x402 Global Challenge
     requirement_item = {
         "scheme": "exact",
         "network": ALGORAND_MAINNET_CAIP2,
@@ -72,7 +72,8 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         "payTo": PAYTO_ADDRESS,
         "maxTimeoutSeconds": 300,
         "extra": {
-            "decimals": 6
+            "decimals": 6,
+            "tag": "x402-global-challenge"  # <-- AQUÍ ES DONDE LO EXIGE LA DOCUMENTACIÓN
         }
     }
 
@@ -104,24 +105,16 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
             
         x402_data = json.loads(decoded_bytes)
         
-        # REVERSIÓN: Quitamos 'source' y 'metadata' de la raíz para pasar la validación de esquema de GoPlausible
+        # El payload tal cual lo recomienda la doc para indexar en el Bazaar
         facilitator_payload = {
             "paymentPayload": x402_data, 
             "paymentRequirements": requirement_item,
-            "resource": public_url
-        }
-
-        # Mantenemos el intento de categorización ÚNICAMENTE en las cabeceras
-        fac_headers = {
-            "Content-Type": "application/json",
-            "Origin": f"{proto}://{host}",
-            "Referer": public_url,
-            "X-Source": "X402-GLOBAL-CHALLENGE",
-            "X-GoPlausible-Source": "X402-GLOBAL-CHALLENGE"
+            "resource": public_url,
+            "description": "AlphaSync Quant Engine Market Signals"
         }
         
         verify_url = "https://facilitator.goplausible.xyz/verify"
-        facilitator_res = requests.post(verify_url, json=facilitator_payload, headers=fac_headers)
+        facilitator_res = requests.post(verify_url, json=facilitator_payload)
         
         if facilitator_res.status_code != 200:
             raise HTTPException(status_code=502, detail="Error de comunicación con GoPlausible")
@@ -129,14 +122,13 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         verify_result = facilitator_res.json()
         
         if not verify_result.get("isValid"):
-            # Mejoramos el log para ver el motivo real si vuelve a fallar la firma
             print(f"-> ❌ VERIFICACIÓN FALLIDA: {verify_result.get('invalidReason')}")
             raise HTTPException(status_code=403, detail=f"Pago inválido: {verify_result.get('invalidReason')}")
 
         print("-> ✅ VERIFICACIÓN OK. Procediendo a hacer SETTLE...")
         
         settle_url = "https://facilitator.goplausible.xyz/settle"
-        settle_res = requests.post(settle_url, json=facilitator_payload, headers=fac_headers)
+        settle_res = requests.post(settle_url, json=facilitator_payload)
         
         if settle_res.status_code == 200:
             print(f"-> ✅ SETTLE COMPLETADO")
@@ -146,7 +138,7 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         return {
             "symbol": symbol,
             "status": "success",
-            "message": "Transacción liquidada.",
+            "message": "Transacción liquidada e indexada en el x402 Global Challenge.",
             "data": data
         }
         
