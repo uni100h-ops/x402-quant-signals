@@ -81,9 +81,27 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         print("-> Petición sin pago: Enviando 402 Challenge")
         payment_challenge = {
             "x402Version": 2,
-            "accepts": [requirement_item]
+            "accepts": [requirement_item],
+            "extensions": {
+                "bazaar": {
+                    "info": {
+                        "description": "AlphaSync Quant Engine Market Signals",
+                        "method": "GET",
+                        "input": {
+                            "symbol": "BTC"
+                        },
+                        "output": {
+                            "example": {
+                                "asset": "BTC/USDT",
+                                "price": 64777.38,
+                                "recommendation": "BUY",
+                                "timestamp": 1785445577
+                            }
+                        }
+                    }
+                }
+            }
         }
-        
         req_json = json.dumps(payment_challenge, separators=(',', ':'))
         encoded_req = base64.urlsafe_b64encode(req_json.encode()).decode().rstrip("=")
         
