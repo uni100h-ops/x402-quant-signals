@@ -63,6 +63,7 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         request.headers.get("payment-signature")
     )
 
+    # REVERSIÓN: Estructura limpia y estricta para no romper la firma del cliente
     requirement_item = {
         "scheme": "exact",
         "network": ALGORAND_MAINNET_CAIP2,
@@ -71,9 +72,7 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         "payTo": PAYTO_ADDRESS,
         "maxTimeoutSeconds": 300,
         "extra": {
-            "decimals": 6,
-            "projectName": "AlphaSync",
-            "source": "X402-GLOBAL-CHALLENGE"
+            "decimals": 6
         }
     }
 
@@ -105,18 +104,14 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
             
         x402_data = json.loads(decoded_bytes)
         
-        # Inyección agresiva de etiquetas para forzar el indexado en la competición
+        # REVERSIÓN: Quitamos 'source' y 'metadata' de la raíz para pasar la validación de esquema de GoPlausible
         facilitator_payload = {
             "paymentPayload": x402_data, 
             "paymentRequirements": requirement_item,
-            "resource": public_url,
-            "source": "X402-GLOBAL-CHALLENGE",
-            "metadata": {
-                "name": "AlphaSync Quant Engine"
-            }
+            "resource": public_url
         }
 
-        # Forzamos las cabeceras HTTP imitando el comportamiento de su SDK
+        # Mantenemos el intento de categorización ÚNICAMENTE en las cabeceras
         fac_headers = {
             "Content-Type": "application/json",
             "Origin": f"{proto}://{host}",
@@ -134,8 +129,12 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         verify_result = facilitator_res.json()
         
         if not verify_result.get("isValid"):
+            # Mejoramos el log para ver el motivo real si vuelve a fallar la firma
+            print(f"-> ❌ VERIFICACIÓN FALLIDA: {verify_result.get('invalidReason')}")
             raise HTTPException(status_code=403, detail=f"Pago inválido: {verify_result.get('invalidReason')}")
 
+        print("-> ✅ VERIFICACIÓN OK. Procediendo a hacer SETTLE...")
+        
         settle_url = "https://facilitator.goplausible.xyz/settle"
         settle_res = requests.post(settle_url, json=facilitator_payload, headers=fac_headers)
         
