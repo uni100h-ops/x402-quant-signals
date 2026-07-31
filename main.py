@@ -29,7 +29,7 @@ app.add_middleware(
 PAYTO_ADDRESS = "SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI"
 USDC_ASA_ID = "31566704"
 ALGORAND_MAINNET_CAIP2 = "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8="
-PRICE = "500000"
+PRICE = "100000"
 
 def calculate_quant_signals(symbol: str):
     url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol.upper()}USDT"
