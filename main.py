@@ -26,6 +26,41 @@ app.add_middleware(
     ]
 )
 
+# ✅ RUTA PARA AGENT CARD
+@app.get("/.well-known/agent-card.json")
+async def get_agent_card():
+    """Sirve el Agent Card para x402 Discovery"""
+    return {
+        "name": "Toni Trading Signals",
+        "description": "Quant Signals Trading Agent",
+        "version": "1.0.0",
+        "icon": "https://i.imgur.com/qEmbipv.jpeg",
+        "url": "https://x402-quant-signals.onrender.com",
+        "capabilities": {
+            "streaming": False,
+            "pushNotifications": False
+        },
+        "supportedInterfaces": [
+            {
+                "url": "https://x402-quant-signals.onrender.com/api/v1/market-signal",
+                "protocolBinding": "JSONRPC",
+                "protocolVersion": "1.0"
+            }
+        ],
+        "defaultInputModes": ["text/plain"],
+        "defaultOutputModes": ["application/json"],
+        "skills": [
+            {
+                "id": "market-signal",
+                "name": "Market Signal",
+                "description": "Provides quantitative trading signals and market analysis"
+            }
+        ],
+        "provider": {
+            "name": "x402-quant-signals"
+        }
+    }
+
 PAYTO_ADDRESS = "SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI"
 USDC_ASA_ID = "31566704"
 ALGORAND_MAINNET_CAIP2 = "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8="
