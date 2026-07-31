@@ -1,8 +1,29 @@
 {
-  "name": "Toni Trading Signals,
+  "name": "Toni Trading Signals",
   "description": "Quant Signals Trading Agent",
   "version": "1.0.0",
   "icon": "https://i.imgur.com/qEmbipv.jpeg",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "extendedAgentCard": false
+  },
+  "supportedInterfaces": [
+    {
+      "url": "https://x402-quant-signals.onrender.com/api/v1/market-signal",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ],
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "trading-signals",
+      "name": "Trading Signals",
+      "description": "Provides quantitative trading signals"
+    }
+  ],
   "provider": {
     "name": "x402-quant-signals"
   }
