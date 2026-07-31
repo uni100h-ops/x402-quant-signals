@@ -1,15 +1,11 @@
 import time
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-
-# Importaciones del SDK oficial (ajusta los nombres exactos si la doc del SDK varía ligeramente)
-from x402_avm.middleware import X402Middleware
-from x402_avm.models import PaymentRequirement, BazaarInfo
 
 app = FastAPI(title="AlphaSync Quant Engine API")
 
-# 1. Configuración de CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,36 +13,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["x402-payment-required", "payment-required"]
-)
-
-# 2. Configuración del Middleware x402 (Esto reemplaza todo tu código manual)
-app.add_middleware(
-    X402Middleware,
-    requirement=PaymentRequirement(
-        scheme="exact",
-        network="algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=",
-        asset="31566704",
-        amount="100000",
-        payTo="SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI",
-        maxTimeoutSeconds=300,
-        extra={
-            "decimals": 6, 
-            "tag": "x402-global-challenge"
-        }
-    ),
-    bazaar=BazaarInfo(
-        description="AlphaSync Quant Engine Market Signals",
-        method="GET",
-        input={"symbol": "BTC"},
-        output={
-            "example": {
-                "asset": "BTC/USDT",
-                "price": 64777.38,
-                "recommendation": "BUY",
-                "timestamp": 1785445577
-            }
-        }
-    )
 )
 
 def calculate_quant_signals(symbol: str):
@@ -60,7 +26,6 @@ def calculate_quant_signals(symbol: str):
     price = float(data["lastPrice"])
     change_24h = float(data["priceChangePercent"])
     
-    # Lógica de señales
     trend = "BULLISH" if change_24h > 0 else "BEARISH"
     signal = "BUY" if change_24h > 1.5 else ("SELL" if change_24h < -1.5 else "HOLD")
     
@@ -71,19 +36,53 @@ def calculate_quant_signals(symbol: str):
         "timestamp": int(time.time())
     }
 
-# 3. Tu endpoint completamente limpio
 @app.get("/api/v1/market-signal")
-async def get_market_signal(symbol: str = "BTC"):
-    # Si la ejecución llega a este punto, el middleware x402-avm 
-    # ya ha interceptado la llamada, enviado el HTTP 402, 
-    # validado el pago on-chain y gestionado la indexación en Bazaar.
+async def get_market_signal(request: Request, symbol: str = "BTC"):
+    # Comprobamos si el cliente ya nos envía el recibo de pago
+    receipt = request.headers.get("x402-receipt")
     
+    # Si no hay recibo, devolvemos el payload del protocolo 402
+    if not receipt:
+        x402_payload = {
+            "requirement": {
+                "scheme": "exact",
+                "network": "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=",
+                "asset": "31566704",
+                "amount": "100000",
+                "payTo": "SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI",
+                "maxTimeoutSeconds": 300,
+                "extra": {
+                    "decimals": 6, 
+                    "tag": "x402-global-challenge"
+                }
+            },
+            "bazaar": {
+                "description": "AlphaSync Quant Engine Market Signals",
+                "method": "GET",
+                "input": {"symbol": "BTC"},
+                "output": {
+                    "example": {
+                        "asset": "BTC/USDT",
+                        "price": 64777.38,
+                        "recommendation": "BUY",
+                        "timestamp": 1785445577
+                    }
+                }
+            }
+        }
+        
+        # El protocolo x402 exige un código HTTP 402 y devolver el esquema
+        return JSONResponse(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            content=x402_payload,
+            headers={"x402-payment-required": "true"}
+        )
+    
+    # Si hay recibo (pago completado on-chain), servimos los datos reales
     data = calculate_quant_signals(symbol)
-    
     return {
         "symbol": symbol,
         "status": "success",
-        "message": "Transacción liquidada automáticamente por x402-avm.",
         "data": data
     }
 
