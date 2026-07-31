@@ -1,0 +1,46 @@
+{
+  "x402Version": 2,
+  "resource": {
+    "url": "https://x402-quant-signals.onrender.com/api/v1/market-signal",
+    "description": "Real-time Market Signals & Crypto Analysis",
+    "mimeType": "application/json"
+  },
+  "accepts": [
+    {
+      "scheme": "exact",
+      "network": "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkkit8=",
+      "asset": "31566704",
+      "amount": "100000",
+      "payTo": "SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI",
+      "maxTimeoutSeconds": 300,
+      "extra": {
+        "decimals": 6,
+        "tag": "x402-global-challenge"
+      }
+    }
+  ],
+  "extensions": {
+    "bazaar": {
+      "info": {
+        "icon": "https://i.imgur.com/qEmbipv.jpeg",
+        "name": "Toni Trading Signals",
+        "category": "crypto-trading",
+        "tags": ["trading", "signals", "market-analysis"],
+        "provider": "toni_t",
+        "displayName": "Toni Trading Signals"
+      },
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Cryptocurrency symbol for market signal",
+            "examples": ["BTC", "ETH", "ALGO"]
+          }
+        },
+        "required": ["symbol"]
+      }
+    }
+  }
+}
