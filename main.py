@@ -102,13 +102,14 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         payment_challenge = {
             "x402Version": 2,
             "resource": {
+                "name": "AlphaSync Quant Engine",  # ⭐ AQUÍ VA EL NOMBRE DEL PROYECTO
                 "url": public_url,
-                "description": "AlphaSync Quant Engine - Real-time Market Signals",
+                "description": "Real-time Market Signals & Crypto Analysis",
                 "mimeType": "application/json"
             },
             "accepts": [requirement_item],
             "extensions": {
-                "bazaar": bazaar_extension  # ⭐ CRITICAL: Sin esto no aparece en RESOURCES
+                "bazaar": bazaar_extension
             }
         }
         
