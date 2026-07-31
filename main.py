@@ -3,7 +3,9 @@ import json
 import requests
 import traceback
 import time
+import os 
 from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi.responses import FileResponse 
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="AlphaSync Quant Engine API")
@@ -27,39 +29,11 @@ app.add_middleware(
 )
 
 # ✅ RUTA PARA AGENT CARD
-@app.get("/.well-known/agent-card.json")
-async def get_agent_card():
-    """Sirve el Agent Card para x402 Discovery"""
-    return {
-        "name": "Toni Trading Signals",
-        "description": "Quant Signals Trading Agent",
-        "version": "1.0.0",
-        "icon": "https://i.imgur.com/qEmbipv.jpeg",
-        "url": "https://x402-quant-signals.onrender.com",
-        "capabilities": {
-            "streaming": False,
-            "pushNotifications": False
-        },
-        "supportedInterfaces": [
-            {
-                "url": "https://x402-quant-signals.onrender.com/api/v1/market-signal",
-                "protocolBinding": "JSONRPC",
-                "protocolVersion": "1.0"
-            }
-        ],
-        "defaultInputModes": ["text/plain"],
-        "defaultOutputModes": ["application/json"],
-        "skills": [
-            {
-                "id": "market-signal",
-                "name": "Market Signal",
-                "description": "Provides quantitative trading signals and market analysis"
-            }
-        ],
-        "provider": {
-            "name": "x402-quant-signals"
-        }
-    }
+@app.get("/.well-known/x402.json")
+async def x402_manifest():
+    """Serve the x402 discovery manifest"""
+    file_path = os.path.join(os.path.dirname(__file__), "x402.json")
+    return FileResponse(file_path, media_type="application/json")
 
 PAYTO_ADDRESS = "SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI"
 USDC_ASA_ID = "31566704"
