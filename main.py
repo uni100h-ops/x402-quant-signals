@@ -60,8 +60,8 @@ def calculate_quant_signals(symbol: str):
         "timestamp": int(time.time())
     }
 
-@app.get("/api/v1/market-signal")
-async def get_market_signal(request: Request, response: Response, symbol: str = "BTC"):
+@app.get("/api/v1/market-signal/{symbol}")
+async def get_market_signal(request: Request, response: Response, symbol: str):
     
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "x402-quant-signals.onrender.com"
     proto = request.headers.get("x-forwarded-proto") or "https"
@@ -90,7 +90,6 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
     if not auth_header:
         print("-> Petición sin pago: Enviando 402 Challenge con Bazaar Discovery")
         
-        # ⭐ BAZAAR EXTENSION PARA DISCOVERY
         bazaar_extension = {
             "info": {
                 "symbol": "string (BTC, ETH, ALGO, etc.)"
@@ -111,8 +110,8 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         payment_challenge = {
             "x402Version": 2,
             "resource": {
-                "title": "AlphaSync Quant Engine",  # ⭐ Intenta con "title"
-                "name": "AlphaSync Quant Engine",  # ⭐ AQUÍ VA EL NOMBRE DEL PROYECTO
+                "title": "AlphaSync Quant Engine",
+                "name": "AlphaSync Quant Engine",
                 "url": public_url,
                 "description": "Real-time Market Signals & Crypto Analysis",
                 "mimeType": "application/json"
