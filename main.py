@@ -1,7 +1,71 @@
+import base64
+import json
+import requests
+import traceback
+import time
+from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
+# ⭐ CREAR LA APP AL PRINCIPIO
+app = FastAPI(title="AlphaSync Quant Engine API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=[
+        "x402-payment-required",
+        "payment-required",
+        "Payment-Required",
+        "PAYMENT-RESPONSE",
+        "X-PAYMENT-RESPONSE",
+        "x402-version",
+        "x402-status",
+        "x402-settle-endpoint",
+        "x402-verify-endpoint",
+        "Content-Type"
+    ]
+)
+
+PAYTO_ADDRESS = "SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI"
+USDC_ASA_ID = "31566704"
+ALGORAND_MAINNET_CAIP2 = "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8="
+PRICE = "100000"
+
+def calculate_quant_signals(symbol: str):
+    """Calcula señales de mercado usando Binance"""
+    try:
+        url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol.upper()}USDT"
+        res = requests.get(url, timeout=10)
+        
+        if res.status_code != 200:
+            return {"error": f"Símbolo {symbol} no encontrado"}
+        
+        data = res.json()
+        price = float(data["lastPrice"])
+        change_24h = float(data["priceChangePercent"])
+        
+        signal = "BUY" if change_24h > 1.5 else ("SELL" if change_24h < -1.5 else "HOLD")
+        
+        return {
+            "asset": f"{symbol.upper()}/USDT",
+            "price": price,
+            "change_24h": change_24h,
+            "recommendation": signal,
+            "timestamp": int(time.time())
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/api/v1/market-signal")
 async def get_market_signal(request: Request, response: Response, symbol: str = "BTC"):
     """
     Endpoint de señales de mercado con pago x402
+    
+    Query params:
+    - symbol: BTC, ETH, ALGO, etc. (por defecto BTC)
     """
     
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "x402-quant-signals.onrender.com"
@@ -67,17 +131,16 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
             }
         }
         
-        # ⭐ FORMATO CORRECTO PARA x402-payment-required
-        # NO debe ser base64url, debe ser el JSON directamente
+        # ⭐ JSON DIRECTO, NO encodificado
         req_json = json.dumps(payment_challenge)
         
         response.status_code = 402
-        response.headers["x402-payment-required"] = req_json  # ⭐ JSON DIRECTO
+        response.headers["x402-payment-required"] = req_json
         response.headers["x402-version"] = "2"
         response.headers["x402-status"] = "payment-required"
         response.headers["Content-Type"] = "application/json"
         
-        return {}  # Cuerpo vacío para 402
+        return {}
 
     # ===== CON PAGO: VERIFICAR Y DEVOLVER DATOS =====
     print("\n✅ [200] Pago recibido - Verificando...")
@@ -141,3 +204,14 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         print(f"💥 ERROR: {str(e)}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+@app.get("/health")
+async def health_check():
+    """Endpoint de salud (sin pago requerido)"""
+    return {"status": "ok", "service": "AlphaSync Quant Engine"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8080)
