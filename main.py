@@ -6,7 +6,6 @@ import time
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-# ⭐ CREAR LA APP AL PRINCIPIO
 app = FastAPI(title="AlphaSync Quant Engine API")
 
 app.add_middleware(
@@ -23,8 +22,6 @@ app.add_middleware(
         "X-PAYMENT-RESPONSE",
         "x402-version",
         "x402-status",
-        "x402-settle-endpoint",
-        "x402-verify-endpoint",
         "Content-Type"
     ]
 )
@@ -35,53 +32,37 @@ ALGORAND_MAINNET_CAIP2 = "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8="
 PRICE = "100000"
 
 def calculate_quant_signals(symbol: str):
-    """Calcula señales de mercado usando Binance"""
-    try:
-        url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol.upper()}USDT"
-        res = requests.get(url, timeout=10)
-        
-        if res.status_code != 200:
-            return {"error": f"Símbolo {symbol} no encontrado"}
-        
-        data = res.json()
-        price = float(data["lastPrice"])
-        change_24h = float(data["priceChangePercent"])
-        
-        signal = "BUY" if change_24h > 1.5 else ("SELL" if change_24h < -1.5 else "HOLD")
-        
-        return {
-            "asset": f"{symbol.upper()}/USDT",
-            "price": price,
-            "change_24h": change_24h,
-            "recommendation": signal,
-            "timestamp": int(time.time())
-        }
-    except Exception as e:
-        return {"error": str(e)}
+    url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol.upper()}USDT"
+    res = requests.get(url)
+    
+    if res.status_code != 200:
+        return {"error": "Símbolo no encontrado"}
+    
+    data = res.json()
+    price = float(data["lastPrice"])
+    change_24h = float(data["priceChangePercent"])
+    
+    signal = "BUY" if change_24h > 1.5 else ("SELL" if change_24h < -1.5 else "HOLD")
+    
+    return {
+        "asset": f"{symbol.upper()}/USDT",
+        "price": price,
+        "recommendation": signal,
+        "timestamp": int(time.time())
+    }
 
 @app.get("/api/v1/market-signal")
 async def get_market_signal(request: Request, response: Response, symbol: str = "BTC"):
-    """
-    Endpoint de señales de mercado con pago x402
-    
-    Query params:
-    - symbol: BTC, ETH, ALGO, etc. (por defecto BTC)
-    """
     
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "x402-quant-signals.onrender.com"
     proto = request.headers.get("x-forwarded-proto") or "https"
-    query_string = f"?symbol={symbol}" if symbol else ""
-    public_url = f"{proto}://{host}{request.url.path}{query_string}"
-    
-    print(f"\n📍 URL Pública: {public_url}")
-    print(f"🔤 Símbolo solicitado: {symbol}")
+    public_url = f"{proto}://{host}{request.url.path}"
 
     auth_header = (
         request.headers.get("Authorization") or 
         request.headers.get("PAYMENT-SIGNATURE") or 
         request.headers.get("X-PAYMENT") or
-        request.headers.get("payment-signature") or
-        request.headers.get("x402-payment-token")
+        request.headers.get("payment-signature")
     )
 
     requirement_item = {
@@ -93,57 +74,59 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         "maxTimeoutSeconds": 300,
         "extra": {
             "decimals": 6,
-            "tag": "x402-quant-signals"
+            "tag": "x402-global-challenge"
         }
     }
 
-    # ===== SIN PAGO: DEVOLVER 402 =====
     if not auth_header:
-        print("🔴 [402] Challenge enviado")
+        print("-> Petición sin pago: Enviando 402 Challenge con Bazaar Discovery")
+        
+        # ⭐ BAZAAR EXTENSION PARA DISCOVERY
+        bazaar_extension = {
+            "info": {
+                "symbol": "string (BTC, ETH, ALGO, etc.)"
+            },
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Cryptocurrency symbol for market signal",
+                        "examples": ["BTC", "ETH", "ALGO"]
+                    }
+                },
+                "required": ["symbol"]
+            }
+        }
         
         payment_challenge = {
             "x402Version": 2,
             "resource": {
-                "title": "AlphaSync Quant Engine",
-                "name": "Market Signal API",
+                "title": "AlphaSync Quant Engine",  # ⭐ Intenta con "title"
+                "name": "AlphaSync Quant Engine",  # ⭐ AQUÍ VA EL NOMBRE DEL PROYECTO
                 "url": public_url,
                 "description": "Real-time Market Signals & Crypto Analysis",
                 "mimeType": "application/json"
             },
             "accepts": [requirement_item],
             "extensions": {
-                "bazaar": {
-                    "info": {
-                        "symbol": "string (BTC, ETH, ALGO, etc.)"
-                    },
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "symbol": {
-                                "type": "string",
-                                "description": "Cryptocurrency symbol for market signal",
-                                "examples": ["BTC", "ETH", "ALGO"]
-                            }
-                        },
-                        "required": ["symbol"]
-                    }
-                }
+                "bazaar": bazaar_extension
             }
         }
         
-        # ⭐ JSON DIRECTO, NO encodificado
-        req_json = json.dumps(payment_challenge)
+        req_json = json.dumps(payment_challenge, separators=(',', ':'))
+        encoded_req = base64.urlsafe_b64encode(req_json.encode()).decode().rstrip("=")
         
         response.status_code = 402
-        response.headers["x402-payment-required"] = req_json
+        response.headers["x402-payment-required"] = encoded_req
+        response.headers["payment-required"] = encoded_req
         response.headers["x402-version"] = "2"
         response.headers["x402-status"] = "payment-required"
         response.headers["Content-Type"] = "application/json"
         
-        return {}
+        return payment_challenge
 
-    # ===== CON PAGO: VERIFICAR Y DEVOLVER DATOS =====
-    print("\n✅ [200] Pago recibido - Verificando...")
+    print("\n=== NUEVO INTENTO DE PAGO RECIBIDO ===")
     
     try:
         token = auth_header.replace("x402 ", "").replace("Bearer ", "").strip()
@@ -155,7 +138,6 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
             decoded_bytes = base64.b64decode(padded_token)
             
         x402_data = json.loads(decoded_bytes)
-        print(f"🔐 Token decodificado")
         
         facilitator_payload = {
             "paymentPayload": x402_data, 
@@ -164,53 +146,46 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
             "description": "AlphaSync Quant Engine Market Signals"
         }
         
-        print("🔍 Verificando con GoPlausible...")
         verify_url = "https://facilitator.goplausible.xyz/verify"
-        verify_res = requests.post(verify_url, json=facilitator_payload, timeout=10)
+        facilitator_res = requests.post(verify_url, json=facilitator_payload)
         
-        if verify_res.status_code != 200:
-            print(f"❌ Verificación falló: {verify_res.status_code}")
-            raise HTTPException(status_code=502, detail="Facilitator error")
+        if facilitator_res.status_code != 200:
+            raise HTTPException(status_code=502, detail="Error de comunicación con GoPlausible")
             
-        verify_result = verify_res.json()
+        verify_result = facilitator_res.json()
         
         if not verify_result.get("isValid"):
-            reason = verify_result.get('invalidReason', 'Unknown')
-            print(f"❌ Pago inválido: {reason}")
-            raise HTTPException(status_code=403, detail=f"Payment invalid: {reason}")
+            print(f"-> ❌ VERIFICACIÓN FALLIDA: {verify_result.get('invalidReason')}")
+            raise HTTPException(status_code=403, detail=f"Pago inválido: {verify_result.get('invalidReason')}")
 
-        print("💳 Liquidando pago...")
+        print("-> ✅ VERIFICACIÓN OK. Procediendo a hacer SETTLE...")
+        
         settle_url = "https://facilitator.goplausible.xyz/settle"
-        settle_res = requests.post(settle_url, json=facilitator_payload, timeout=10)
+        settle_res = requests.post(settle_url, json=facilitator_payload)
         
         if settle_res.status_code == 200:
-            print(f"✅ SETTLE OK")
+            print(f"-> ✅ SETTLE COMPLETADO")
 
-        signal_data = calculate_quant_signals(symbol)
-        
-        response.status_code = 200
-        response.headers["Content-Type"] = "application/json"
+        data = calculate_quant_signals(symbol)
         
         return {
             "symbol": symbol,
             "status": "success",
-            "message": f"Payment settled. Market signal for {symbol} calculated.",
-            "data": signal_data
+            "message": "Transacción liquidada e indexada en el x402 Global Challenge.",
+            "data": data
         }
         
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        print(f"💥 ERROR: {str(e)}")
+        print("💥 ERROR INTERNO CRÍTICO DETECTADO:")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
-
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 @app.get("/health")
 async def health_check():
     """Endpoint de salud (sin pago requerido)"""
-    return {"status": "ok", "service": "AlphaSync Quant Engine"}
-
+    return {"status": "ok"}
 
 if __name__ == "__main__":
     import uvicorn
