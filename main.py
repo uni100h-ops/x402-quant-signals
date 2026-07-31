@@ -79,10 +79,37 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
     }
 
     if not auth_header:
-        print("-> Petición sin pago: Enviando 402 Challenge")
+        print("-> Petición sin pago: Enviando 402 Challenge con Bazaar Discovery")
+        
+        # ⭐ BAZAAR EXTENSION PARA DISCOVERY
+        bazaar_extension = {
+            "info": {
+                "symbol": "string (BTC, ETH, ALGO, etc.)"
+            },
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Cryptocurrency symbol for market signal",
+                        "examples": ["BTC", "ETH", "ALGO"]
+                    }
+                },
+                "required": ["symbol"]
+            }
+        }
+        
         payment_challenge = {
             "x402Version": 2,
-            "accepts": [requirement_item]
+            "resource": {
+                "url": public_url,
+                "description": "AlphaSync Quant Engine - Real-time Market Signals",
+                "mimeType": "application/json"
+            },
+            "accepts": [requirement_item],
+            "extensions": {
+                "bazaar": bazaar_extension  # ⭐ CRITICAL: Sin esto no aparece en RESOURCES
+            }
         }
         
         req_json = json.dumps(payment_challenge, separators=(',', ':'))
