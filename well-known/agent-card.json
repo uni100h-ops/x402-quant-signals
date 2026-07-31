@@ -3,10 +3,10 @@
   "description": "Quant Signals Trading Agent",
   "version": "1.0.0",
   "icon": "https://i.imgur.com/qEmbipv.jpeg",
+  "url": "https://x402-quant-signals.onrender.com",
   "capabilities": {
     "streaming": false,
-    "pushNotifications": false,
-    "extendedAgentCard": false
+    "pushNotifications": false
   },
   "supportedInterfaces": [
     {
@@ -19,9 +19,9 @@
   "defaultOutputModes": ["application/json"],
   "skills": [
     {
-      "id": "trading-signals",
-      "name": "Trading Signals",
-      "description": "Provides quantitative trading signals"
+      "id": "market-signal",
+      "name": "Market Signal",
+      "description": "Provides quantitative trading signals and market analysis"
     }
   ],
   "provider": {
