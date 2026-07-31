@@ -1,0 +1,9 @@
+{
+  "name": "Toni Trading Signals,
+  "description": "Quant Signals Trading Agent",
+  "version": "1.0.0",
+  "icon": "https://imgur.com/a/TtNDYTK",
+  "provider": {
+    "name": "x402-quant-signals"
+  }
+}
