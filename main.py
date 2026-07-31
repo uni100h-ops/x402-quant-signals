@@ -1,98 +1,37 @@
-"""FastAPI resource server accepting USDC payments on Algorand Mainnet via x402."""
-
-import os
-from dotenv import load_dotenv
-from fastapi import FastAPI, Request
-from pydantic import BaseModel
-
-from x402.http import FacilitatorConfig, HTTPFacilitatorClient, PaymentOption
-from x402.http.middleware.fastapi import PaymentMiddlewareASGI
-from x402.http.types import RouteConfig
-from x402.mechanisms.avm import ALGORAND_MAINNET_CAIP2, USDC_MAINNET_ASA_ID
-from x402.mechanisms.avm.exact import ExactAvmServerScheme
-from x402.server import x402ResourceServer
-from x402.schemas import AssetAmount
-
-load_dotenv()
-
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
-PAYTO_ADDRESS = os.getenv("PAYTO_ADDRESS", "SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI")
-FACILITATOR_URL = os.getenv("FACILITATOR_URL", "https://facilitator.goplausible.xyz")
-
-# ---------------------------------------------------------------------------
-# Response Models
-# ---------------------------------------------------------------------------
-
-class MarketSignalData(BaseModel):
-    asset: str
-    price: float
-    recommendation: str
-    timestamp: int
-
-class MarketSignalResponse(BaseModel):
-    symbol: str
-    status: str
-    message: str
-    data: MarketSignalData
-
-# ---------------------------------------------------------------------------
-# App & Middleware Setup
-# ---------------------------------------------------------------------------
+import base64
+import json
+import requests
+import traceback
+import time
+from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="AlphaSync Quant Engine API")
 
-# Create async facilitator client and resource server
-facilitator = HTTPFacilitatorClient(
-    FacilitatorConfig(url=FACILITATOR_URL)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=[
+        "x402-payment-required",
+        "payment-required",
+        "Payment-Required",
+        "PAYMENT-RESPONSE",
+        "X-PAYMENT-RESPONSE",
+        "x402-version",
+        "x402-status",
+        "Content-Type"
+    ]
 )
-server = x402ResourceServer(facilitator)
 
-# Register AVM server scheme for Algorand Mainnet
-server.register(ALGORAND_MAINNET_CAIP2, ExactAvmServerScheme())
-
-# Define payment-protected routes
-routes = {
-    "GET /api/v1/market-signal": RouteConfig(
-        accepts=PaymentOption(
-            scheme="exact",
-            pay_to=PAYTO_ADDRESS,
-            price=AssetAmount(
-                amount="100000",  # 100000 microUSDC = $0.10
-                asset=str(USDC_MAINNET_ASA_ID),  # 31566704
-                extra={
-                    "decimals": 6,
-                    "tag": "x402-global-challenge",
-                    "name": "USDC"
-                },
-            ),
-            network=ALGORAND_MAINNET_CAIP2,
-        ),
-        mime_type="application/json",
-        description="AlphaSync Quant Engine Market Signals",
-        resource="https://x402-quant-signals.onrender.com/api/v1/market-signal",
-    ),
-}
-
-# Register ASGI middleware - This handles ALL payment logic
-app.add_middleware(PaymentMiddlewareASGI, routes=routes, server=server)
-
-# ---------------------------------------------------------------------------
-# Route Handlers
-# ---------------------------------------------------------------------------
-
-@app.get("/health")
-async def health_check() -> dict[str, str]:
-    """Health check endpoint (no payment required)."""
-    return {"status": "ok"}
+PAYTO_ADDRESS = "SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI"
+USDC_ASA_ID = "31566704"
+ALGORAND_MAINNET_CAIP2 = "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8="
+PRICE = "100000"
 
 def calculate_quant_signals(symbol: str):
-    """Calculate market signals from Binance."""
-    import time
-    import requests
-    
     url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol.upper()}USDT"
     res = requests.get(url)
     
@@ -113,23 +52,111 @@ def calculate_quant_signals(symbol: str):
     }
 
 @app.get("/api/v1/market-signal")
-async def get_market_signal(request: Request, symbol: str = "BTC") -> MarketSignalResponse:
-    """
-    Market signal endpoint (requires USDC payment on Algorand).
-    The middleware automatically handles payment verification.
-    """
-    data = calculate_quant_signals(symbol)
+async def get_market_signal(request: Request, response: Response, symbol: str = "BTC"):
     
-    return MarketSignalResponse(
-        symbol=symbol,
-        status="success",
-        message="Transacción liquidada e indexada en el x402 Global Challenge.",
-        data=MarketSignalData(**data)
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "x402-quant-signals.onrender.com"
+    proto = request.headers.get("x-forwarded-proto") or "https"
+    public_url = f"{proto}://{host}{request.url.path}"
+
+    auth_header = (
+        request.headers.get("Authorization") or 
+        request.headers.get("PAYMENT-SIGNATURE") or 
+        request.headers.get("X-PAYMENT") or
+        request.headers.get("payment-signature")
     )
 
-# ---------------------------------------------------------------------------
-# Entry Point
-# ---------------------------------------------------------------------------
+    requirement_item = {
+        "scheme": "exact",
+        "network": ALGORAND_MAINNET_CAIP2,
+        "asset": USDC_ASA_ID,
+        "amount": PRICE,
+        "payTo": PAYTO_ADDRESS,
+        "maxTimeoutSeconds": 300,
+        "extra": {
+            "decimals": 6,
+            "tag": "x402-global-challenge"
+        }
+    }
+
+    if not auth_header:
+        print("-> Petición sin pago: Enviando 402 Challenge")
+        payment_challenge = {
+            "x402Version": 2,
+            "accepts": [requirement_item]
+        }
+        
+        req_json = json.dumps(payment_challenge, separators=(',', ':'))
+        encoded_req = base64.urlsafe_b64encode(req_json.encode()).decode().rstrip("=")
+        
+        response.status_code = 402
+        response.headers["x402-payment-required"] = encoded_req
+        response.headers["payment-required"] = encoded_req
+        response.headers["x402-version"] = "2"
+        response.headers["x402-status"] = "payment-required"
+        response.headers["Content-Type"] = "application/json"
+        
+        return payment_challenge
+
+    print("\n=== NUEVO INTENTO DE PAGO RECIBIDO ===")
+    
+    try:
+        token = auth_header.replace("x402 ", "").replace("Bearer ", "").strip()
+        padded_token = token + "=" * ((4 - len(token) % 4) % 4)
+        
+        try:
+            decoded_bytes = base64.urlsafe_b64decode(padded_token)
+        except:
+            decoded_bytes = base64.b64decode(padded_token)
+            
+        x402_data = json.loads(decoded_bytes)
+        
+        facilitator_payload = {
+            "paymentPayload": x402_data, 
+            "paymentRequirements": requirement_item,
+            "resource": public_url,
+            "description": "AlphaSync Quant Engine Market Signals"
+        }
+        
+        verify_url = "https://facilitator.goplausible.xyz/verify"
+        facilitator_res = requests.post(verify_url, json=facilitator_payload)
+        
+        if facilitator_res.status_code != 200:
+            raise HTTPException(status_code=502, detail="Error de comunicación con GoPlausible")
+            
+        verify_result = facilitator_res.json()
+        
+        if not verify_result.get("isValid"):
+            print(f"-> ❌ VERIFICACIÓN FALLIDA: {verify_result.get('invalidReason')}")
+            raise HTTPException(status_code=403, detail=f"Pago inválido: {verify_result.get('invalidReason')}")
+
+        print("-> ✅ VERIFICACIÓN OK. Procediendo a hacer SETTLE...")
+        
+        settle_url = "https://facilitator.goplausible.xyz/settle"
+        settle_res = requests.post(settle_url, json=facilitator_payload)
+        
+        if settle_res.status_code == 200:
+            print(f"-> ✅ SETTLE COMPLETADO")
+
+        data = calculate_quant_signals(symbol)
+        
+        return {
+            "symbol": symbol,
+            "status": "success",
+            "message": "Transacción liquidada e indexada en el x402 Global Challenge.",
+            "data": data
+        }
+        
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        print("💥 ERROR INTERNO CRÍTICO DETECTADO:")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+
+@app.get("/health")
+async def health_check():
+    """Endpoint de salud (sin pago requerido)"""
+    return {"status": "ok"}
 
 if __name__ == "__main__":
     import uvicorn
