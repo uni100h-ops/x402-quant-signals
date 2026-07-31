@@ -1,8 +1,5 @@
 fastapi==0.104.1
 uvicorn==0.24.0
 requests==2.31.0
-python-dotenv==1.0.0
-x402-avm==0.2.0
-pydantic==2.5.0
-algosdk==2.5.0
+
 
