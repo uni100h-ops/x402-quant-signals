@@ -73,7 +73,7 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         "maxTimeoutSeconds": 300,
         "extra": {
             "decimals": 6,
-            "tag": "x402-global-challenge"  # <-- AQUÍ ES DONDE LO EXIGE LA DOCUMENTACIÓN
+            "tag": "x402-global-challenge"
         }
     }
 
@@ -90,6 +90,11 @@ async def get_market_signal(request: Request, response: Response, symbol: str = 
         response.status_code = 402
         response.headers["x402-payment-required"] = encoded_req
         response.headers["payment-required"] = encoded_req
+        # ⭐ HEADER CRÍTICO PARA INDEXACIÓN EN GOPLAUSIBLE
+        response.headers["Content-Type"] = "application/json"
+        response.headers["x402-version"] = "2"
+        response.headers["x402-status"] = "payment-required"
+        
         return payment_challenge
 
     print("\n=== NUEVO INTENTO DE PAGO RECIBIDO ===")
