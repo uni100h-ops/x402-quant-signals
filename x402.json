@@ -24,10 +24,10 @@
       "info": {
         "icon": "https://i.imgur.com/qEmbipv.jpeg",
         "name": "Toni Trading Signals",
+        "displayName": "Toni Trading Signals",
         "category": "crypto-trading",
         "tags": ["trading", "signals", "market-analysis"],
-        "provider": "toni_t",
-        "displayName": "Toni Trading Signals"
+        "provider": "toni_t"
       },
       "schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
