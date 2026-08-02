@@ -1,20 +1,13 @@
 {
-  "name": "Toni Trading Signals",
-  "description": "Quant Signals Trading Agent",
+  "name": "Syra",
+  "description": "Toni Quant Signals Trading Agent",
   "version": "1.0.0",
-  "icon": "https://i.imgur.com/qEmbipv.jpeg",
-  "url": "https://x402-quant-signals.onrender.com",
+  "iconUrl": "https://i.imgur.com/qEmbipv.jpeg",
+  "url": "https://x402-quant-signals.onrender.com/api/v1/market-signal",
   "capabilities": {
     "streaming": false,
     "pushNotifications": false
   },
-  "supportedInterfaces": [
-    {
-      "url": "https://x402-quant-signals.onrender.com/api/v1/market-signal",
-      "protocolBinding": "JSONRPC",
-      "protocolVersion": "1.0"
-    }
-  ],
   "defaultInputModes": ["text/plain"],
   "defaultOutputModes": ["application/json"],
   "skills": [
@@ -24,7 +17,11 @@
       "description": "Provides quantitative trading signals and market analysis"
     }
   ],
-  "provider": {
-    "name": "x402-quant-signals"
-  }
+  "supportedInterfaces": [
+    {
+      "url": "https://x402-quant-signals.onrender.com/api/v1/market-signal",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ]
 }
