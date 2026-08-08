@@ -1,11 +1,15 @@
 {
+  "identifier": "toni-trading-signals",
   "name": "Toni Trading signals",
+  "displayName": "Toni Trading signals",
+  "preferredName": "Antonio Fernández",
   "description": "Crypto trading signals",
   "version": "1.0.0",
   "iconUrl": "https://i.imgur.com/qEmbipv.jpeg",
   "url": "https://x402-quant-signals.onrender.com/api/v1/market-signal",
   "provider": {
-    "organization": "Toni T2",
+    "organization": "Antonio Fernández",
+    "displayName": "Antonio Fernández",
     "url": "https://yourorganization.com"
   },
   "capabilities": {
