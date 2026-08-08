@@ -1,7 +1,6 @@
 {
   "name": "Toni Trading Signals",
   "description": "Crypto trading signals and market analysis",
-  "iconUrl": "https://i.imgur.com/qEmbipv.jpeg",
   "resource": {
     "url": "https://x402-quant-signals.onrender.com/api/v1/market-signal",
     "description": "Get real-time trading signals",
