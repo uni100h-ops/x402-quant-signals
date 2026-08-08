@@ -1,36 +1,26 @@
 {
-  "identifier": "toni-trading-signals",
-  "name": "Toni Trading signals",
-  "displayName": "Toni Trading signals",
-  "preferredName": "Antonio Fernández",
-  "description": "Crypto trading signals",
-  "version": "1.0.0",
-  "iconUrl": "https://i.imgur.com/qEmbipv.jpeg",
-  "url": "https://x402-quant-signals.onrender.com/api/v1/market-signal",
-  "provider": {
-    "organization": "Antonio Fernández",
-    "displayName": "Antonio Fernández",
-    "url": "https://yourorganization.com"
+  "resource": {
+    "url": "https://x402-quant-signals.onrender.com/api/v1/market-signal",
+    "description": "Crypto trading signals and market analysis",
+    "serviceName": "Toni Trading Signals",
+    "tags": ["trading", "signals", "crypto"],
+    "iconUrl": "https://i.imgur.com/qEmbipv.jpeg"
   },
-  "capabilities": {
-    "streaming": false,
-    "pushNotifications": false
-  },
-  "defaultInputModes": ["text/plain"],
-  "defaultOutputModes": ["application/json"],
-  "supportedInterfaces": [
+  "accepts": [
     {
-      "url": "https://x402-quant-signals.onrender.com/api/v1/market-signal",
-      "protocolBinding": "JSONRPC",
-      "protocolVersion": "1.0"
+      "scheme": "exact",
+      "price": "$0.001",
+      "network": "eip155:8453",
+      "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "payTo": "SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI"
     }
   ],
-  "skills": [
-    {
-      "id": "market-signal",
-      "name": "Market Signal",
-      "description": "Provides quantitative trading signals and market analysis",
-      "tags": ["trading", "signals", "market"]
+  "extensions": {
+    "bazaar": {
+      "info": {
+        "type": "http",
+        "method": "GET"
+      }
     }
-  ]
+  }
 }
