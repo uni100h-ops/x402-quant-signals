@@ -41,7 +41,7 @@ ALGORAND_MAINNET_CAIP2 = "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8="
 PRICE = "100000"
 
 def calculate_quant_signals(symbol: str):
-    url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol.upper()}USDT"
+    url = f"https://api.binance.com/api/v3/ticker?symbol={symbol.upper()}USDT&windowSize=1h"
     res = requests.get(url)
     
     if res.status_code != 200:
@@ -49,13 +49,14 @@ def calculate_quant_signals(symbol: str):
     
     data = res.json()
     price = float(data["lastPrice"])
-    change_24h = float(data["priceChangePercent"])
+    change_1h = float(data["priceChangePercent"])
     
-    signal = "BUY" if change_24h > 1.5 else ("SELL" if change_24h < -1.5 else "HOLD")
+    signal = "BUY" if change_1h > 0.5 else ("SELL" if change_1h < -0.5 else "HOLD")
     
     return {
         "asset": f"{symbol.upper()}/USDT",
         "price": price,
+        "change_1h": change_1h,
         "recommendation": signal,
         "timestamp": int(time.time())
     }
