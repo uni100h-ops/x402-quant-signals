@@ -41,24 +41,41 @@ ALGORAND_MAINNET_CAIP2 = "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8="
 PRICE = "100000"
 
 def calculate_quant_signals(symbol: str):
-    url = f"https://api.binance.com/api/v3/ticker?symbol={symbol.upper()}USDT&windowSize=1h"
+    url = f"https://api.binance.com/api/v3/klines?symbol={symbol.upper()}USDT&interval=1m&limit=2"
     res = requests.get(url)
     
     if res.status_code != 200:
         return {"error": "Símbolo no encontrado"}
     
     data = res.json()
-    price = float(data["lastPrice"])
-    change_1h = float(data["priceChangePercent"])
+    print(f"\n📊 Respuesta API klines para {symbol.upper()}:")
+    print(f"✅ {data}\n")
     
-    signal = "BUY" if change_1h > 0.5 else ("SELL" if change_1h < -0.5 else "HOLD")
+    # klines devuelve array de arrays: [[timestamp, open, high, low, close, volume, ...]]
+    if len(data) < 1:
+        return {"error": "Sin datos disponibles"}
+    
+    # Obtener el último candle (índice -1) y el anterior (índice -2 si existe)
+    last_candle = data[-1]
+    price = float(last_candle[4])  # close price
+    
+    # Calcular cambio de precio comparando con el candle anterior
+    if len(data) >= 2:
+        prev_candle = data[-2]
+        prev_price = float(prev_candle[4])
+        change_percent = ((price - prev_price) / prev_price) * 100
+    else:
+        change_percent = 0
+    
+    signal = "BUY" if change_percent > 1.5 else ("SELL" if change_percent < -1.5 else "HOLD")
     
     return {
         "asset": f"{symbol.upper()}/USDT",
         "price": price,
-        "change_1h": change_1h,
+        "change_percent": change_percent,
         "recommendation": signal,
-        "timestamp": int(time.time())
+        "timestamp": int(time.time()),
+        "raw_api_response": data
     }
 
 @app.get("/api/v1/market-signal/{symbol}")
