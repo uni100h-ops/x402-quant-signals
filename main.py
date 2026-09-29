@@ -7,8 +7,10 @@ import os
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import FileResponse 
 from fastapi.middleware.cors import CORSMiddleware
+from qts_bazaar import install_qts_metadata
 
 app = FastAPI(title="AlphaSync Quant Engine API")
+install_qts_metadata(app)
 
 app.add_middleware(
     CORSMiddleware,
