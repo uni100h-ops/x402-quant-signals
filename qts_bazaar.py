@@ -43,9 +43,9 @@ def enrich_challenge(value):
                     "additionalProperties": False,
                     "required": ["type", "method"],
                     "properties": {
-                        "type": {"type": "string", "enum": ["http"]},
+                        "type": {"type": "string", "const": "http"},
                         "method": {"type": "string", "enum": ["GET"]},
-                        "queryParams": {"type": "object"},
+                        "queryParams": {"type": "object", "properties": {}},
                     },
                 },
                 "name": {"type": "string"},
@@ -87,6 +87,23 @@ class QTSMetadataMiddleware:
         async def decorated_send(message):
             nonlocal start, size, passthrough
             if message["type"] == "http.response.start":
+                # Expose payment headers even on probes without an Origin header.
+                # CORSMiddleware keeps controlling which origins are allowed.
+                message = dict(message)
+                response_headers = list(message.get("headers", []))
+                exposed = []
+                for key, value in response_headers:
+                    if key.lower() == b"access-control-expose-headers":
+                        exposed.extend(v.strip() for v in value.decode("latin-1").split(",") if v.strip())
+                known = {v.lower() for v in exposed}
+                for name in ("PAYMENT-REQUIRED", "PAYMENT-RESPONSE", "X402-PAYMENT-REQUIRED", "X-PAYMENT-RESPONSE"):
+                    if name.lower() not in known:
+                        exposed.append(name)
+                        known.add(name.lower())
+                response_headers = [(k, v) for k, v in response_headers
+                                    if k.lower() != b"access-control-expose-headers"]
+                response_headers.append((b"access-control-expose-headers", ", ".join(exposed).encode("latin-1")))
+                message["headers"] = response_headers
                 if message["status"] != 402:
                     passthrough = True
                     await send(message)
@@ -124,7 +141,7 @@ class QTSMetadataMiddleware:
                     if enriched is None:
                         raise ValueError("unsupported payment challenge")
                     encoded = base64.b64encode(_json_bytes(enriched))
-                    headers = [(k, encoded if k.lower() == b"payment-required" else v)
+                    headers = [(k, encoded if k.lower() in (b"payment-required", b"x402-payment-required") else v)
                                for k, v in headers]
                     changed = True
                 try:
