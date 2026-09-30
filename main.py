@@ -7,9 +7,9 @@ import os
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import FileResponse 
 from fastapi.middleware.cors import CORSMiddleware
-from qts_bazaar import install_qts_metadata
+from qts_bazaar import install_qts_metadata, enrich_challenge, NAME
 
-app = FastAPI(title="AlphaSync Quant Engine API")
+app = FastAPI(title=NAME)
 install_qts_metadata(app)
 
 app.add_middleware(
@@ -44,18 +44,18 @@ PRICE = "100000"
 
 def calculate_quant_signals(symbol: str):
     url = f"https://api.binance.com/api/v3/klines?symbol={symbol.upper()}USDT&interval=1m&limit=2"
-    res = requests.get(url)
+    res = requests.get(url, timeout=(10, 20))
     
     if res.status_code != 200:
-        return {"error": "Símbolo no encontrado"}
+        return {"error": "Symbol not found"}
     
     data = res.json()
-    print(f"\n📊 Respuesta API klines para {symbol.upper()}:")
+    print(f"MARKET DATA | {symbol.upper()}")
     print(f"✅ {data}\n")
     
     # klines devuelve array de arrays: [[timestamp, open, high, low, close, volume, ...]]
     if len(data) < 1:
-        return {"error": "Sin datos disponibles"}
+        return {"error": "No market data available"}
     
     # Obtener el último candle (índice -1) y el anterior (índice -2 si existe)
     last_candle = data[-1]
@@ -83,9 +83,7 @@ def calculate_quant_signals(symbol: str):
 @app.get("/api/v1/market-signal/{symbol}")
 async def get_market_signal(request: Request, response: Response, symbol: str):
     
-    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "x402-quant-signals.onrender.com"
-    proto = request.headers.get("x-forwarded-proto") or "https"
-    public_url = f"{proto}://{host}{request.url.path}"
+    public_url = "https://x402-quant-signals.onrender.com" + request.url.path
 
     auth_header = (
         request.headers.get("Authorization") or 
@@ -107,54 +105,34 @@ async def get_market_signal(request: Request, response: Response, symbol: str):
         }
     }
 
+    # One authoritative challenge for the body, both headers and settlement.
+    payment_challenge = enrich_challenge({
+        "x402Version": 2,
+        "resource": {
+            "title": NAME,
+            "name": NAME,
+            "url": public_url,
+            "description": "Quantitative cryptocurrency market signals",
+            "mimeType": "application/json"
+        },
+        "accepts": [requirement_item]
+    })
+
     if not auth_header:
-        print("-> Petición sin pago: Enviando 402 Challenge con Bazaar Discovery")
-        
-        bazaar_extension = {
-            "info": {
-                "symbol": "string (BTC, ETH, ALGO, etc.)"
-            },
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "symbol": {
-                        "type": "string",
-                        "description": "Cryptocurrency symbol for market signal",
-                        "examples": ["BTC", "ETH", "ALGO"]
-                    }
-                },
-                "required": ["symbol"]
-            }
-        }
-        
-        payment_challenge = {
-            "x402Version": 2,
-            "resource": {
-                "title": "AlphaSync Quant Engine",
-                "name": "AlphaSync Quant Engine",
-                "url": public_url,
-                "description": "Real-time Market Signals & Crypto Analysis",
-                "mimeType": "application/json"
-            },
-            "accepts": [requirement_item],
-            "extensions": {
-                "bazaar": bazaar_extension
-            }
-        }
-        
-        req_json = json.dumps(payment_challenge, separators=(',', ':'))
-        encoded_req = base64.urlsafe_b64encode(req_json.encode()).decode().rstrip("=")
-        
+        print("PAYMENT REQUIRED | Quant Trading Signals | Bazaar metadata attached")
+        encoded_req = base64.b64encode(
+            json.dumps(payment_challenge, ensure_ascii=False, separators=(",", ":")).encode()
+        ).decode()
         response.status_code = 402
-        response.headers["x402-payment-required"] = encoded_req
         response.headers["payment-required"] = encoded_req
+        response.headers["x402-payment-required"] = encoded_req
         response.headers["x402-version"] = "2"
         response.headers["x402-status"] = "payment-required"
         response.headers["Content-Type"] = "application/json"
-        
+        response.headers["Cache-Control"] = "no-store"
         return payment_challenge
 
-    print("\n=== NUEVO INTENTO DE PAGO RECIBIDO ===")
+    print("PAYMENT REQUEST RECEIVED")
     
     try:
         token = auth_header.replace("x402 ", "").replace("Bearer ", "").strip()
@@ -166,49 +144,76 @@ async def get_market_signal(request: Request, response: Response, symbol: str):
             decoded_bytes = base64.b64decode(padded_token)
             
         x402_data = json.loads(decoded_bytes)
+        if not isinstance(x402_data, dict) or x402_data.get("x402Version") != 2:
+            raise HTTPException(status_code=400, detail="Expected an x402 v2 payment payload")
+        client_resource = x402_data.get("resource") or {}
+        if not isinstance(client_resource, dict) or client_resource.get("url") not in (None, public_url):
+            raise HTTPException(status_code=400, detail="Payment resource does not match this endpoint")
+        # Some older clients omit extensions. Send the SERVER declaration in both
+        # /verify and /settle, instead of relying on client-supplied discovery data.
+        client_extensions = x402_data.get("extensions") or {}
+        if not isinstance(client_extensions, dict):
+            raise HTTPException(status_code=400, detail="Invalid payment extensions")
+        x402_data["resource"] = payment_challenge["resource"]
+        x402_data["extensions"] = {**client_extensions, **payment_challenge["extensions"]}
         
         facilitator_payload = {
+            "x402Version": 2,
             "paymentPayload": x402_data, 
             "paymentRequirements": requirement_item,
             "resource": public_url,
-            "description": "AlphaSync Quant Engine Market Signals"
+            "description": "Quant Trading Signals"
         }
         
         verify_url = "https://facilitator.goplausible.xyz/verify"
-        facilitator_res = requests.post(verify_url, json=facilitator_payload)
+        facilitator_res = requests.post(verify_url, json=facilitator_payload, timeout=(10, 45))
         
         if facilitator_res.status_code != 200:
-            raise HTTPException(status_code=502, detail="Error de comunicación con GoPlausible")
+            raise HTTPException(status_code=502, detail="GoPlausible verification service unavailable")
             
         verify_result = facilitator_res.json()
         
         if not verify_result.get("isValid"):
-            print(f"-> ❌ VERIFICACIÓN FALLIDA: {verify_result.get('invalidReason')}")
-            raise HTTPException(status_code=403, detail=f"Pago inválido: {verify_result.get('invalidReason')}")
+            print(f"PAYMENT VERIFICATION FAILED | {verify_result.get('invalidReason')}")
+            raise HTTPException(status_code=403, detail=f"Invalid payment: {verify_result.get('invalidReason')}")
 
-        print("-> ✅ VERIFICACIÓN OK. Procediendo a hacer SETTLE...")
+        print("PAYMENT VERIFIED | submitting settlement")
         
         settle_url = "https://facilitator.goplausible.xyz/settle"
-        settle_res = requests.post(settle_url, json=facilitator_payload)
+        settle_res = requests.post(settle_url, json=facilitator_payload, timeout=(10, 60))
         
-        if settle_res.status_code == 200:
-            print(f"-> ✅ SETTLE COMPLETADO")
+        if settle_res.status_code != 200:
+            raise HTTPException(status_code=502,
+                detail="Settlement not confirmed. Check the existing transaction before paying again.")
+        settlement = settle_res.json()
+        if not isinstance(settlement, dict) or settlement.get("success") is not True or not settlement.get("transaction"):
+            raise HTTPException(status_code=502,
+                detail="Settlement not confirmed. Check the existing transaction before paying again.")
+        print("PAYMENT SETTLED | " + str(settlement["transaction"]))
+        receipt = base64.b64encode(json.dumps(settlement, separators=(",", ":")).encode()).decode()
+        response.headers["PAYMENT-RESPONSE"] = receipt
+        response.headers["X-PAYMENT-RESPONSE"] = receipt
+        response.headers["Cache-Control"] = "no-store"
 
         data = calculate_quant_signals(symbol)
         
         return {
             "symbol": symbol,
             "status": "success",
-            "message": "Transacción liquidada e indexada en el x402 Global Challenge.",
+            "message": "Payment settled. Bazaar metadata submitted to the facilitator.",
+            "transaction": settlement["transaction"],
             "data": data
         }
         
+    except (requests.Timeout, requests.ConnectionError):
+        raise HTTPException(status_code=502,
+            detail="Confirmation unavailable. Check the existing transaction before paying again.") from None
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        print("💥 ERROR INTERNO CRÍTICO DETECTADO:")
+        print("INTERNAL ERROR")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal request error; inspect the server log before retrying payment")
 
 @app.get("/health")
 async def health_check():
