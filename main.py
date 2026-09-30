@@ -17,7 +17,7 @@ import httpx
 from algosdk import encoding, transaction
 from algosdk.v2client.algod import AlgodClient
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 from nacl.signing import VerifyKey
 from x402.extensions.bazaar import declare_discovery_extension
@@ -116,6 +116,20 @@ async def unavailable(request,error):
 async def homepage():return FileResponse(HERE/'index.html')
 @app.get('/wallet.js',include_in_schema=False)
 async def wallet_js():return FileResponse(HERE/'wallet.js',media_type='application/javascript')
+# Public project logo, using the same three green bars as the website.
+# Embedded here so deployment still requires only the existing runtime files.
+@app.api_route('/logo.svg',methods=['GET','HEAD'],include_in_schema=False)
+async def merchant_logo():
+    svg='''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="title">
+<title id="title">Quant Trading Signals</title>
+<rect width="256" height="256" rx="48" fill="#080e16"/>
+<g fill="#8df2b6">
+<path d="M44 161h36l-10 47H34z"/>
+<path d="M109 104h36l-22 104H87z"/>
+<path d="M174 48h36l-34 160h-36z"/>
+</g></svg>'''
+    return Response(content=svg,media_type='image/svg+xml')
+
 @app.get('/health')
 async def health():
     return {'status':'ok','version':VERSION,'news_configured':bool(os.getenv('GNEWS_API_KEY')), 'network':'mainnet'}
@@ -139,7 +153,26 @@ def extensions():
     ext['schema']['properties']['input']['required'].append('method')
     ext['info'].update({'name':NAME,'description':'5-minute technical signals with relevant daily news.',
                         'tags':['x402-global-challenge','trading','crypto']})
-    data['x402-merchant']={'info':{'name':NAME},'schema':{'type':'object','required':['name'],'properties':{'name':{'type':'string'}}}}
+    data['x402-merchant']={
+        'info':{
+            'name':NAME,
+            'website':ORIGIN+'/',
+            'logo':ORIGIN+'/logo.svg',
+            'categories':['trading-signals','market-data','crypto'],
+        },
+        'schema':{
+            '$schema':'https://json-schema.org/draft/2020-12/schema',
+            'type':'object',
+            'required':['name','website','logo','categories'],
+            'properties':{
+                'name':{'type':'string','minLength':1},
+                'website':{'type':'string','format':'uri'},
+                'logo':{'type':'string','format':'uri'},
+                'categories':{'type':'array','minItems':1,'uniqueItems':True,
+                              'items':{'type':'string','minLength':1}},
+            },
+        },
+    }
     return data
 
 async def requirement():
@@ -360,3 +393,4 @@ async def legacy_default(request:Request,payment_signature:str|None=Header(None)
 if __name__=='__main__':
     import uvicorn
     uvicorn.run(app,host='0.0.0.0',port=int(os.getenv('PORT','8080')))
+
