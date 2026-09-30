@@ -1,92 +1,95 @@
 # Quant Trading Signals
 
-Select a cryptocurrency, connect **Kibisis**, and approve **0.10 USDC on Algorand** to receive a **BUY, SELL or HOLD** report with a 5-minute chart, technical indicators, a relevant news headline and an explanation.
+**5-minute technicals. Daily news.**
 
-Website: https://x402-quant-signals.onrender.com/
+Get a **BUY, SELL or HOLD** report with a chart, technical indicators, relevant news and an explanation. Each report costs **0.10 USDC on Algorand**, paid through x402.
 
-API documentation: https://x402-quant-signals.onrender.com/docs
+[Open the app](https://x402-quant-signals.onrender.com/) · [API documentation](https://x402-quant-signals.onrender.com/docs)
 
-## Using the website
+## Get started
 
-1. Install [Kibisis](https://kibis.is/) in a supported desktop browser. Use **Algorand Mainnet**.
-2. Enable USDC in the wallet (asset **31566704**) and fund it with at least **0.10 USDC**. The account also needs the normal ALGO minimum balance for its account/assets. Initial wallet funding and asset opt-in are not sponsored by this application.
-3. Select an asset, click **Connect Kibisis**, and choose your account.
-4. Click **Check signal**. The server checks market data and news before requesting a payment signature. Confirm **0.10 USDC**, then read the report.
+1. Install and unlock [Kibisis](https://kibis.is/) in a supported desktop browser.
+2. Select **Algorand Mainnet**, enable USDC (**asset 31566704**) and fund your wallet with at least **0.10 USDC**. Keep enough ALGO for the account and asset minimum balance.
+3. Choose a cryptocurrency and click **Connect Kibisis**.
+4. Click **Check signal**. The app checks market data and news before requesting payment.
+5. Approve **0.10 USDC** in your wallet and read your report.
 
-Payment uses x402 and goes to the project's merchant address. The facilitator sponsors the network fee for the report payment. This is a report purchase, **not a fee paid to the Algorand Foundation**. No trading orders are placed and no seed phrase is requested by this website or its server.
+The website never requests your seed phrase or private key. The language menu offers **English, Español, Français and Deutsch**. English is the default; your choice is remembered.
 
-The interface starts in English and offers English, Spanish, French and German. News headlines retain their source language. Mobile layout is supported; wallet signing requires a browser supported by Kibisis.
+## Your report
 
-If confirmation is interrupted, keep the browser data and click **Resume confirmation**. It retries the same payment, not a new purchase. An expired, unconfirmed payment is released only after the server checks that both the node and indexer have passed its validity window. A fresh check after a completed report is a separate **0.10 USDC** purchase. A HOLD report has the same price as BUY or SELL.
+- A clear **BUY, SELL or HOLD** signal.
+- A 5-minute chart, EMA 20/50, RSI, MACD, ADX and ATR readings.
+- Relevant news from the current UTC day, with a source link.
+- An explanation, timestamp, downloadable JSON report and on-chain payment receipt.
 
-## How the report is decided
+Signals use **closed Binance 5-minute candles** and rule-based news filtering. News opposing a directional technical signal changes it to HOLD. Headlines remain in their source language.
 
-- Market data: Binance Spot, with Binance USD-M perpetuals as a fallback for a symbol not found on Spot. The report identifies the exact market and quote currency.
-- Only closed **5-minute candles** are used, with up to 600 candles for indicator warm-up. The chart shows the last 96 candles.
-- BUY: EMA 20 above EMA 50, MACD 12/26 above its 9-period signal, RSI 14 strictly between 50 and 70, ADX 14 at least 18, ATR 14 between 0.03% and 3% of price.
-- SELL: EMA 20 below EMA 50, MACD below its signal, RSI strictly between 30 and 50, with the same ADX and ATR filters. Otherwise HOLD.
-- EMA alignment is sufficient; a new crossover on the latest candle is **not** required. The report separately identifies whether that candle had a crossover.
-- GNews returns relevant English articles from the current **UTC day**. Asset relevance, event keywords and recency rank the retrieved candidates. Conservative headline keywords produce a positive, negative or neutral bias. A bias contrary to a directional technical signal changes the result to HOLD. News never creates a BUY/SELL on its own.
+The catalog retains 68 asset routes; availability depends on supported markets. Missing market data or relevant news blocks checkout before payment. USDT is not sold as a directional signal.
 
-This is an explainable rule set, not an AI reading full articles or a prediction. “Highest-ranked news” means highest-scoring among the retrieved candidates, not a claim to have searched every news source. No backtest or return is claimed for this website. A purchased report is a saved snapshot; a new purchase can produce a different signal as new candles and news arrive.
+## Payments
 
-The catalog retains **all 68 legacy coin routes**. Retired/unavailable assets remain visible but cannot be purchased. USDT is retained for route continuity but is not sold as a directional signal. Missing, stale or incomplete market data, or no relevant news today, blocks checkout **before payment**.
+| Item | Cost |
+| --- | --- |
+| One report, including HOLD | **0.10 USDC** |
+| Report payment network fee | Sponsored by the x402 facilitator |
+| Extra application fee | None |
 
-## Deploy on the existing Render service
+Use **USDC on Algorand**, not another network. Initial wallet funding and USDC opt-in are not sponsored.
 
-Use the existing **x402-quant-signals** service and domain to preserve registered URLs. This package replaces that API application; it does not change the separate `qts-server` trading agent service or the Windows installer.
+Payments go to the project merchant through x402. Metadata includes Bazaar discovery information and the `x402-global-challenge` tag. The report price is a service payment, not a separate Algorand Foundation fee.
 
-Five runtime files plus this README are sufficient:
+If confirmation is interrupted, click **Resume confirmation** and keep your browser data. This reuses the same signed payment request. A new check after a completed report is a new purchase.
+
+## Deploy on Render
+
+Keep these files at the repository root:
 
 | File | Purpose |
-|---|---|
-| `main.py` | FastAPI routes, static website, x402/Bazaar, unsigned checkout groups, payment verification and persistent receipts. |
-| `signals.py` | Legacy assets, Binance data, closed-candle indicators, news ranking and signal rules. |
-| `index.html` | Responsive website, four languages and report display. |
-| `wallet.js` | Bundled Kibisis connector and Algorand transaction validation. No Node build is required on Render. Includes third-party notices. |
-| `requirements.txt` | Pinned Python dependencies tested with Python 3.12.14. |
-| `README.md` | This usage and deployment guide. |
+| --- | --- |
+| `main.py` | Web server, API, payments and receipts. |
+| `signals.py` | Market data, news and signal rules. |
+| `index.html` | Website and report display. |
+| `wallet.js` | Kibisis connection and payment validation. |
+| `requirements.txt` | Python dependencies. |
+| `README.md` | This guide. |
 
-After backing up the old version, replace its application with these six files at the repository root. Old `qts_bazaar.py`, `client.mjs`, `generar_clave.mjs`, `optin_usdc.py`, `package.json`, `package-lock.json`, `x402.json` and the old `.well-known` directory are not used by this version. The discovery manifest is generated by FastAPI. Do not copy test fixtures, local databases, virtual environments or secret keys into GitHub.
+Use a **Python web service**, **one instance**, and a persistent disk mounted at `/var/data`.
 
-Render settings:
+**Build command**
 
-- Runtime: **Python 3**; Root Directory: empty; one service instance.
-- Build Command: `pip install -r requirements.txt`
-- Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1`
-- Health Check Path: `/health`
-- Persistent disk mounted at `/var/data`. Do not run multiple workers or instances with this SQLite deployment.
+```sh
+pip install -r requirements.txt
+```
 
-Set these environment variables in Render:
+**Start command**
 
-| Variable | Value |
-|---|---|
+```sh
+uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
+```
+
+**Health check:** `/health`
+
+| Environment variable | Value |
+| --- | --- |
 | `PYTHON_VERSION` | `3.12.14` |
 | `PUBLIC_URL` | `https://x402-quant-signals.onrender.com` |
 | `DATABASE_PATH` | `/var/data/qts.sqlite3` |
-| `GNEWS_API_KEY` | Your GNews API key, entered as a server secret. |
-| `NEWS_DAILY_LIMIT` | `90` initially; set a cap below the daily allowance of your GNews plan. |
+| `GNEWS_API_KEY` | Your private [GNews API key](https://gnews.io/register). |
+| `NEWS_DAILY_LIMIT` | `90`, or a lower cap within your provider allowance. |
 
-**Operating costs:** Render persistent disks require a paid service. GNews Free is for development/testing and delays news by 12 hours; a published commercial service needs a suitable paid GNews plan. Check current provider terms/pricing. The app will not silently substitute yesterday's news or fabricate a report when news is unavailable. News requests are cached for 15 minutes per asset, with a shared persisted daily cap.
+Use a GNews plan suitable for your intended use and current-day news. Save API keys in Render, never in GitHub.
 
-The receiving address is fixed as `SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI`. No merchant signing key is needed. Customers sign in their own wallets; sponsor configuration is discovered from the facilitator. Keep `/var/data/qts.sqlite3` and its SQLite companion files across restarts/redeploys; deleting or rolling back payment records breaks report recovery.
+Deploy the latest commit. Check that `/health` returns `status: "ok"` and `news_configured: true`, then test the website. No Node build is required. Preserve the database across deployments and keep **one worker and one instance**.
 
-Deploy the latest commit manually. Check `/health` returns version `3.0.0` and `news_configured: true`; then open `/`, `/docs`, `/api/v1/assets` and `/api/v1/market-signal/UNI`. An unpaid request to the last route must return **HTTP 402**, not a server error.
+## API and troubleshooting
 
-## Bazaar and API continuity
+Reports are available at `GET /api/v1/market-signal/{symbol}`, for example `BTC`, `UNI` or `AVAX`. An unpaid request returns **HTTP 402 Payment Required**. Opening the URL alone does not pay. See [API documentation](https://x402-quant-signals.onrender.com/docs) for the payment flow.
 
-The 68 `/api/v1/market-signal/{symbol}` routes and legacy `/api/v1/market-signal` URL remain. The base URL produces a BTC report. Price, receiving wallet and original domain remain unchanged. Metadata, page title and discovery extensions identify **Quant Trading Signals**. Each payment sends the Bazaar extension and the `x402-global-challenge` tag through verification and settlement.
+- **Wallet error:** refresh with **Ctrl + F5**, check that `wallet.js` is deployed, and unlock Kibisis in the same browser.
+- **News unavailable:** no payment is requested; check the GNews key, plan and quota.
+- **Payment pending:** use **Resume confirmation** instead of another purchase.
+- **Startup failure:** check the persistent disk, `DATABASE_PATH` and start command.
 
-Complete one normal, intentional report purchase, then refresh the merchant catalog. The facilitator controls indexing, displayed merchant names and attribution; this application cannot rename its internal merchant ID or rewrite historical volume. No replayed requests or synthetic payments are used to inflate activity.
+This app provides market analysis and does not execute trades. It makes no profit or backtest guarantee. Reports are saved snapshots; later purchases may give different signals as new candles and news arrive.
 
-API clients obtain the v2 requirements from `PAYMENT-REQUIRED`, sign an exact Algorand payment group with the advertised sponsor, and retry the **same URL** with `PAYMENT-SIGNATURE`. Sponsored payment groups use the sponsor transaction at index 0 and the customer USDC transfer at index 1. Browser checkout also supplies `X-QTS-Quote`. A `202` response means retain the exact signature and retry it. Do not generate a new payment while the old one is pending. The server releases a report only after confirmed settlement or on-chain reconciliation.
-
-## Validation and troubleshooting
-
-Local tests covered indicator rules, closed/stale candle handling, news filters, signature/recipient/amount checks, Bazaar schema, duplicate requests, rejected and uncertain settlements, and receipt recovery. Browser tests covered four languages, responsive layouts, the wallet event protocol, signed transaction serialization and payment recovery using unfunded test fixtures. Live read-only Binance candle requests succeeded for BTC, UNI and AVAX.
-
-**A real funded Kibisis checkout and real GNews requests with your production key have not been performed.** Those remain deployment checks. No claim is made that this version has already charged or been cataloged by the facilitator.
-
-Errors appear in English in Render logs; the website translates its user-facing messages. `NEWS_ACCESS_DENIED` means check the key, plan or remaining provider quota. `NO_RELEVANT_NEWS_TODAY` blocks purchase without a charge. `PAYMENT_PENDING` requires **Resume confirmation**, not another checkout. If the service fails at startup, verify the persistent disk path and single-worker start command.
-
-Provider references: [Render disks](https://render.com/docs/disks), [GNews pricing](https://gnews.io/pricing), [x402 AVM](https://github.com/GoPlausible/x402-avm), [Kibisis](https://kibis.is/).
