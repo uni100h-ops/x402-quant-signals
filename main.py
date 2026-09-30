@@ -41,6 +41,11 @@ PAYTO_ADDRESS = "SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI"
 USDC_ASA_ID = "31566704"
 ALGORAND_MAINNET_CAIP2 = "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8="
 PRICE = "100000"
+# Algorand Mainnet sponsor published by GoPlausible /supported (2026-09-30).
+# This is the facilitator's public fee payer, NOT the merchant or customer wallet.
+FEE_PAYER = "ZMFK2OI7ZBD2U27ISERZC4S6LKM6WMFJPZQ4MYNJDZ2VNBNMBA67RA22AA"
+GASLESS_ENABLED = os.getenv("QTS_GASLESS", "true").strip().lower() in {"1", "true", "yes"}
+
 
 def calculate_quant_signals(symbol: str):
     url = f"https://api.binance.com/api/v3/klines?symbol={symbol.upper()}USDT&interval=1m&limit=2"
@@ -104,6 +109,12 @@ async def get_market_signal(request: Request, response: Response, symbol: str):
             "tag": "x402-global-challenge"
         }
     }
+
+    if GASLESS_ENABLED:
+        # The AVM SDK builds an atomic group: user signs only the USDC transfer
+        # with fee=0; GoPlausible signs its own fee-payer transaction at settlement.
+        # The SAME requirement_item is sent to /verify and /settle below.
+        requirement_item["extra"]["feePayer"] = FEE_PAYER
 
     # One authoritative challenge for the body, both headers and settlement.
     payment_challenge = enrich_challenge({

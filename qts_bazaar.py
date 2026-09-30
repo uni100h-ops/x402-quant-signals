@@ -6,6 +6,11 @@ import logging
 
 NAME = "Quant Trading Signals"
 DESCRIPTION = "Pay-per-call quantitative cryptocurrency market signals."
+WEBSITE = "https://x402-quant-signals.onrender.com"
+LOGO_PATH = "/qts-logo.svg"
+LOGO_URL = WEBSITE + LOGO_PATH
+CATEGORIES = ["finance", "trading", "market-data"]
+LOGO_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><title>Quant Trading Signals</title><rect width="256" height="256" rx="48" fill="#0a1422"/><path d="M38 112L84 88L121 103L175 43L216 60" fill="none" stroke="#35e1b2" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/><text x="128" y="202" text-anchor="middle" font-family="Arial,sans-serif" font-size="66" font-weight="700" fill="#ffffff">QTS</text></svg>'
 LOG = logging.getLogger("qts.metadata")
 
 
@@ -55,10 +60,23 @@ def enrich_challenge(value):
         },
     }
     extensions["x402-merchant"] = {
-        "info": {"name": NAME},
+        "info": {
+            "name": NAME,
+            "description": DESCRIPTION,
+            "website": WEBSITE,
+            "logo": LOGO_URL,
+            "categories": CATEGORIES.copy(),
+        },
         "schema": {
-            "type": "object", "required": ["name"],
-            "properties": {"name": {"type": "string"}},
+            "type": "object",
+            "required": ["name", "website", "logo", "categories"],
+            "properties": {
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "website": {"type": "string", "format": "uri"},
+                "logo": {"type": "string", "format": "uri"},
+                "categories": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+            },
         },
     }
     return result
@@ -171,8 +189,13 @@ def install_qts_metadata(app):
     """Call once after creating FastAPI app, before the server starts."""
     if getattr(app.state, "qts_metadata_installed", False):
         return
-    from starlette.responses import HTMLResponse
+    from starlette.responses import HTMLResponse, Response
     app.add_middleware(QTSMetadataMiddleware)
+    if not any(getattr(route, "path", None) == LOGO_PATH for route in app.routes):
+        async def project_logo():
+            return Response(LOGO_SVG, media_type="image/svg+xml",
+                            headers={"Cache-Control": "public, max-age=86400"})
+        app.add_api_route(LOGO_PATH, project_logo, methods=["GET"], include_in_schema=False)
     if not any(getattr(route, "path", None) == "/" for route in app.routes):
         async def homepage():
             return HTMLResponse(
@@ -181,6 +204,10 @@ def install_qts_metadata(app):
                 f'<meta property="og:title" content="{NAME}">'
                 f'<meta name="description" content="{DESCRIPTION}">'
                 f'<meta property="og:description" content="{DESCRIPTION}">'
+                f'<meta property="og:url" content="{WEBSITE}">'
+                f'<meta property="og:image" content="{LOGO_URL}">'
+                f'<link rel="icon" type="image/svg+xml" href="{LOGO_PATH}">'
+                f'<link rel="canonical" href="{WEBSITE}">'
                 f'</head><body><h1>{NAME}</h1><p>{DESCRIPTION}</p></body></html>'
             )
         app.add_api_route("/", homepage, methods=["GET"], include_in_schema=False)
