@@ -40,6 +40,7 @@ def enrich_challenge(value):
             "properties": {
                 "input": {
                     "type": "object",
+                    "additionalProperties": False,
                     "required": ["type", "method"],
                     "properties": {
                         "type": {"type": "string", "enum": ["http"]},
