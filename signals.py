@@ -1,4 +1,4 @@
-"""Closed 5-minute candles and rule-based daily news analysis. No order execution."""
+"""Closed 5-minute signals; news is optional and requested only by web flows."""
 import asyncio
 import math
 import logging
@@ -47,6 +47,10 @@ REASONS = {
  'news_neutral':'Headline terms do not provide a clear directional news bias.',
  'news_conflict':'The headline bias opposes the technical signal; the result is HOLD.',
  'aligned':'Technical filters pass and the headline bias does not oppose the direction.',
+ 'news_not_requested':'API report: technical indicators only; no news provider was queried.',
+ 'no_relevant_news':'No relevant news was found today (UTC). This report uses technical indicators only.',
+ 'news_unavailable':'News could not be checked. This report uses technical indicators only.',
+ 'technical_aligned':'The technical direction, momentum, trend and volatility filters pass.',
 }
 
 class DataUnavailable(Exception):
@@ -147,6 +151,8 @@ class SignalEngine:
     def __init__(self,http,reserve_news=None):
         self.reserve_news=reserve_news
         self.http=http;self.cache={};self.locks={};self.market_cache=None
+        self.news_lock=asyncio.Lock();self.next_news_request=0.0
+        self.news_request_interval=max(1.1,float(os.getenv('NEWS_REQUEST_INTERVAL_SECONDS','1.1')))
     async def get_json(self,url,params=None):
         try:
             response=await self.http.get(url,params=params)
@@ -191,16 +197,24 @@ class SignalEngine:
             if i and int(row[0])-int(rows[i-1][0])!=300000:raise DataUnavailable('CANDLE_GAP')
         return technical(rows),market
     async def news(self,symbol):
+        # Share the provider cache and lock between selection checks and checkout.
+        # This also serializes requests across symbols on the one-worker server.
+        async with self.news_lock:
+            return await self._news_locked(symbol)
+    async def _news_locked(self,symbol):
         now=datetime.now(timezone.utc);key='news:'+symbol+':'+now.date().isoformat()
         cached=self.cache.get(key)
         if cached and cached[0]>time.time():
             if isinstance(cached[1],DataUnavailable):raise cached[1]
             return cached[1]
-        api_key=os.getenv('GNEWS_API_KEY','').strip()
-        if not api_key:raise DataUnavailable('NEWS_API_NOT_CONFIGURED')
-        if self.reserve_news:self.reserve_news()
-        query='"'+ASSETS[symbol]+'" AND (crypto OR token OR blockchain)'
         try:
+            api_key=os.getenv('GNEWS_API_KEY','').strip()
+            if not api_key:raise DataUnavailable('NEWS_API_NOT_CONFIGURED')
+            delay=self.next_news_request-time.monotonic()
+            if delay>0:await asyncio.sleep(delay)
+            if self.reserve_news:self.reserve_news()
+            self.next_news_request=time.monotonic()+self.news_request_interval
+            query='"'+ASSETS[symbol]+'" AND (crypto OR token OR blockchain)'
             data=await self.get_json('https://gnews.io/api/v4/search',{
                 'q':query,'lang':'en','max':10,'sortby':'relevance','in':'title,description',
                 'from':now.replace(hour=0,minute=0,second=0,microsecond=0).isoformat(),
@@ -211,27 +225,52 @@ class SignalEngine:
             self.cache[key]=(time.time()+300,error)
             raise
         self.cache[key]=(time.time()+900,result);return result
-    async def report(self,symbol):
+    async def optional_news(self,symbol):
+        """An absent or unavailable news feed never blocks a technical report."""
+        try:
+            news,count=await self.news(symbol)
+            return news,count,'NEWS_AVAILABLE'
+        except DataUnavailable as error:
+            return None,0,error.code
+    async def news_status(self,symbol):
+        news,_,code=await self.optional_news(symbol)
+        # Availability only: paid headline/content are never exposed by this route.
+        return {'symbol':symbol,'available':news is not None,'code':code,
+                'checked_at':datetime.now(timezone.utc).isoformat()}
+    async def report(self,symbol,*,include_news=False):
         if symbol not in ASSETS:raise DataUnavailable('UNSUPPORTED_ASSET')
         if symbol=='USDT':raise DataUnavailable('STABLECOIN_NO_DIRECTIONAL_SIGNAL')
-        async with self.locks.setdefault(symbol,asyncio.Lock()):
-            cached=self.cache.get('report:'+symbol)
+        cache_key='report:'+('web:' if include_news else 'api:')+symbol
+        async with self.locks.setdefault(cache_key,asyncio.Lock()):
+            cached=self.cache.get(cache_key)
             if cached and cached[0]>time.time():return copy_report(cached[1])
-            (ind,market),(news,count)=await asyncio.gather(self.candles(symbol),self.news(symbol))
-            final=ind['signal'];codes=list(ind['reason_codes']);bias=news['bias']
-            codes.append('news_'+bias.lower())
-            if (final=='BUY' and bias=='NEGATIVE') or (final=='SELL' and bias=='POSITIVE'):
-                final='HOLD';codes.append('news_conflict')
-            elif final!='HOLD':codes.append('aligned')
+            ind,market=await self.candles(symbol)
+            news,count,news_code=(await self.optional_news(symbol)) if include_news else (None,0,'NEWS_NOT_REQUESTED')
+            final=ind['signal'];codes=list(ind['reason_codes'])
+            methodology='EMA 20/50 alignment, MACD 12/26/9, RSI 14, ADX 14 >=18, ATR 14 0.03%-3%'
+            limitations=['Rule-based decision support, not a prediction or a promise of profit.',
+                         'Only closed candles are used. New purchases may change as new candles arrive.']
+            if news is not None:
+                bias=news['bias'];codes.append('news_'+bias.lower())
+                if (final=='BUY' and bias=='NEGATIVE') or (final=='SELL' and bias=='POSITIVE'):
+                    final='HOLD';codes.append('news_conflict')
+                elif final!='HOLD':codes.append('aligned')
+                methodology+='; contrary news bias changes the result to HOLD.'
+                limitations.append('News selection is limited to retrieved GNews articles; headlines remain in their original language.')
+            else:
+                codes.append('news_not_requested' if not include_news else
+                             'no_relevant_news' if news_code=='NO_RELEVANT_NEWS_TODAY' else 'news_unavailable')
+                if final!='HOLD':codes.append('technical_aligned')
+                methodology+='; technical indicators only, without a news adjustment.'
+                limitations.append('This report does not assess news or event risk.')
             report={'schema':'qts-signal-1','symbol':symbol,'name':ASSETS[symbol],
+                'analysis_mode':'technical_and_news' if news is not None else 'technical_only',
+                'news_status':{'requested':include_news,'available':news is not None,'code':news_code},
                 'signal':final,'technical_signal':ind['signal'],'timeframe':'5m',
                 'as_of':datetime.now(timezone.utc).isoformat(),'market':market,'indicators':ind,
                 'news':news,'news_candidates':count,'reason_codes':codes,'reasons':[REASONS[c] for c in codes],
-                'methodology':'EMA 20/50 alignment, MACD 12/26/9, RSI 14, ADX 14 >=18, ATR 14 0.03%-3%; contrary news bias changes the result to HOLD.',
-                'limitations':['Rule-based decision support, not a prediction or a promise of profit.',
-                 'Only closed candles are used. New purchases may change as new candles and news arrive.',
-                 'News selection is limited to retrieved GNews articles; headlines remain in their original language.']}
-            self.cache['report:'+symbol]=(time.time()+20,report)
+                'methodology':methodology,'limitations':limitations}
+            self.cache[cache_key]=(time.time()+20,report)
             return copy_report(report)
 
 def copy_report(value):

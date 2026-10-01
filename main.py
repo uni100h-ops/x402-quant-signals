@@ -12,6 +12,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlparse
+from typing import Literal
 
 import httpx
 from algosdk import encoding, transaction
@@ -24,7 +25,7 @@ from x402.extensions.bazaar import declare_discovery_extension
 from signals import ASSETS, SignalEngine, DataUnavailable
 
 NAME='Quant Trading Signals'
-VERSION='3.0.0'
+VERSION='3.1.0'
 PAY_TO='SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI'
 NETWORK='algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8='
 GENESIS=NETWORK.split(':',1)[1]
@@ -84,7 +85,7 @@ async def lifespan(app):
     await app.state.http.aclose()
 
 app=FastAPI(title=NAME,version=VERSION,lifespan=lifespan,
- description='Closed 5-minute technical indicators plus the highest-ranked relevant news of the UTC day. 0.1 USDC on Algorand per report. No trades are executed.')
+ description='Closed 5-minute technical signals. API purchases never query news; web purchases include relevant daily news when available. 0.1 USDC on Algorand per report. No trades are executed.')
 
 @app.middleware('http')
 async def limits(request,call_next):
@@ -137,7 +138,8 @@ async def health():
 async def config():
     return {'name':NAME,'price_usdc':'0.1','amount':AMOUNT,'asset':ASSET,'pay_to':PAY_TO,
       'network':NETWORK,'genesis_hash':GENESIS,'public_url':ORIGIN,'wallet':'Kibisis',
-      'timeframe':'5m','news_day':'UTC','merchant_id':'1128c420e3f5d347'}
+      'timeframe':'5m','news_day':'UTC','api_news':False,'web_news':'optional',
+      'merchant_id':'1128c420e3f5d347'}
 @app.get('/api/v1/assets')
 async def assets():
     try:markets=await app.state.engine.markets();error=None
@@ -151,7 +153,7 @@ def extensions():
     ext=data['bazaar'];ext['info']['input'].update({'method':'GET','queryParams':{}})
     ext['schema']['properties']['input']['properties']['method']={'type':'string','enum':['GET']}
     ext['schema']['properties']['input']['required'].append('method')
-    ext['info'].update({'name':NAME,'description':'5-minute technical signals with relevant daily news.',
+    ext['info'].update({'name':NAME,'description':'5-minute technical signals; optional daily news in web reports.',
                         'tags':['x402-global-challenge','trading','crypto']})
     data['x402-merchant']={
         'info':{
@@ -189,26 +191,32 @@ async def requirement():
     return {'scheme':'exact','network':NETWORK,'asset':ASSET,'amount':AMOUNT,'payTo':PAY_TO,
             'maxTimeoutSeconds':300,'extra':{'decimals':6,'tag':'x402-global-challenge','feePayer':sponsor}}
 
-def resource(path):return {'url':ORIGIN+path,'description':NAME+' — 5-minute market signal and daily news','mimeType':'application/json','serviceName':NAME}
+def resource(path):return {'url':ORIGIN+path,'description':NAME+' — 5-minute market signal; news optional on the web','mimeType':'application/json','serviceName':NAME}
 def challenge(path,req):return {'x402Version':2,'resource':resource(path),'accepts':[req],'extensions':extensions()}
 @app.get('/.well-known/x402.json',include_in_schema=False)
 async def manifest():
-    return {'name':NAME,'description':'Paid quantitative signals with daily news.','url':ORIGIN,'documentation':ORIGIN+'/docs',
+    return {'name':NAME,'description':'Paid technical signals with optional news for web purchases.','url':ORIGIN,'documentation':ORIGIN+'/docs',
       'payTo':PAY_TO,'network':NETWORK,'resources':[{'url':ORIGIN+'/api/v1/market-signal'+('/'+s if s else ''),
       'method':'GET','description':NAME,'price':'0.1 USDC','extensions':extensions()} for s in ['',*ASSETS]]}
 
 class Checkout(BaseModel):
     address:str=Field(min_length=58,max_length=58)
+    source:Literal['api','web']='api'
 
 def normalize_symbol(symbol):
     symbol=symbol.upper()
     if symbol not in ASSETS:raise HTTPException(404,'UNSUPPORTED_ASSET')
     return symbol
 
-async def precompute(symbol):
+async def precompute(symbol,*,include_news=False):
     # Bound news costs even if anonymous users repeatedly request free preparation.
     # A per-asset report cache and the provider cache also avoid duplicate work.
-    return await app.state.engine.report(symbol)
+    return await app.state.engine.report(symbol,include_news=include_news)
+
+@app.get('/api/v1/news-status/{symbol}')
+async def news_status(symbol:str):
+    """Web selection check: availability only, no paid article or signal content."""
+    return await app.state.engine.news_status(normalize_symbol(symbol))
 
 
 def build_group(payer,req):
@@ -236,7 +244,7 @@ def build_group(payer,req):
 async def checkout(symbol:str,body:Checkout):
     symbol=normalize_symbol(symbol)
     if not encoding.is_valid_address(body.address):raise HTTPException(400,'INVALID_ADDRESS')
-    report=await precompute(symbol);req=await requirement()
+    report=await precompute(symbol,include_news=body.source=='web');req=await requirement()
     try:group,txid=await asyncio.to_thread(build_group,body.address,req)
     except ValueError as e:raise HTTPException(400,str(e)) from None
     except Exception:raise HTTPException(503,'ALGORAND_NODE_UNAVAILABLE') from None
@@ -246,7 +254,8 @@ async def checkout(symbol:str,body:Checkout):
         c.execute('INSERT INTO quotes VALUES (?,?,?,?,?,?,?,?,?)',(quote_id,txid,body.address,ORIGIN+path,
             canonical(report),canonical(req),canonical(group),now,now+180))
     return {'quote_id':quote_id,'expires_at':now+180,'payment_required':challenge(path,req),
-      'unsigned_transactions':group,'sign_indexes':[1],'txid':txid,'charged':False}
+      'unsigned_transactions':group,'sign_indexes':[1],'txid':txid,'charged':False,
+      'news_status':report.get('news_status')}
 
 
 def validate_payload(payload,req,path):
@@ -350,7 +359,7 @@ async def paid_signal(symbol,request,signature,quote_id):
             # Never settle a second time after an uncertain outcome or a restart.
             return JSONResponse({'detail':'PAYMENT_PENDING','txid':txid,'retry_same_payment':True},status_code=202)
         if quote and quote['expires']<time.time():raise HTTPException(409,'QUOTE_EXPIRED_NOT_SUBMITTED')
-        report=json.loads(quote['report']) if quote else await precompute(symbol)
+        report=json.loads(quote['report']) if quote else await precompute(symbol,include_news=False)
         if quote and report['symbol']!=symbol:raise HTTPException(409,'QUOTE_SYMBOL_MISMATCH')
         report_json=canonical(report)
         with db() as c:c.execute('INSERT INTO payments VALUES (?,?,?,?,?,?,?,?)',
@@ -380,7 +389,8 @@ async def market_signal(symbol:str,request:Request,payment_signature:str|None=He
     """Pay 0.1 USDC on Algorand. Returns BUY, SELL or HOLD and the supporting report.
 
     First GET returns PAYMENT-REQUIRED. Retry the SAME route with PAYMENT-SIGNATURE.
-    Web clients prepare an unsigned transaction through /api/v1/checkout/{symbol}.
+    Direct API purchases never query news. Web clients use /api/v1/checkout/{symbol}
+    with source="web" to include news when available; no-news reports remain payable.
     A 202 response must be retried with the SAME signature; do not create a new payment.
     """
     return await paid_signal(symbol,request,payment_signature,x_qts_quote)
@@ -393,4 +403,3 @@ async def legacy_default(request:Request,payment_signature:str|None=Header(None)
 if __name__=='__main__':
     import uvicorn
     uvicorn.run(app,host='0.0.0.0',port=int(os.getenv('PORT','8080')))
-
