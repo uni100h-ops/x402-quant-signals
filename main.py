@@ -21,9 +21,14 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 from nacl.signing import VerifyKey
-from x402.extensions.bazaar import declare_discovery_extension
+from x402.extensions.bazaar import declare_discovery_extension, OutputConfig
 from signals import ASSETS, SignalEngine, DataUnavailable
 
+
+OUTPUT_EXAMPLE={'schema':'qts-signal-1','symbol':'BTC','name':'Bitcoin','timeframe':'5m',
+    'signal':'HOLD','technical_signal':'HOLD',
+    'reason_codes':['ema_bull','macd_bear','rsi_long','technical_mixed'],
+    'market':{'pair':'BTCUSDT','quote':'USDT','venue':'Binance Spot'}}
 NAME='Quant Trading Signals'
 VERSION='3.1.0'
 PAY_TO='SGLTUPAC7TKGKNNXKNPQ2QZCC7NJSLAKYZ7O7NOGGAPXWBFZTOLTPMSPPI'
@@ -149,7 +154,9 @@ async def assets():
       for s,n in sorted(ASSETS.items())],'catalog_source':'Existing merchant routes, captured 2026-09-29','market_error':error}
 
 def extensions():
-    data=declare_discovery_extension(input={},input_schema={'type':'object','properties':{}})
+    # data=declare_discovery_extension(input={},input_schema={'type':'object','properties':{}})
+    data=declare_discovery_extension(input={},input_schema={'type':'object','properties':{}},
+                                     output=OutputConfig(example=OUTPUT_EXAMPLE))
     ext=data['bazaar'];ext['info']['input'].update({'method':'GET','queryParams':{}})
     ext['schema']['properties']['input']['properties']['method']={'type':'string','enum':['GET']}
     ext['schema']['properties']['input']['required'].append('method')
