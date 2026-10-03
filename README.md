@@ -1,5 +1,7 @@
 # Quant Trading Signals
 
+COMMERCIAL WEBSITE: https://quanttrading-signals.com/
+
 **5-minute technicals. Optional daily news on the web.**
 
 Get a **BUY, SELL or HOLD** report with a chart, technical indicators and an explanation. Web reports include relevant news when available. API reports never query news. Each report costs **0.10 USDC on Algorand**, paid through x402.
