@@ -147,11 +147,25 @@ def rank_news(articles,symbol,now):
     candidates.sort(key=lambda a:(a['score'],a['published_at']),reverse=True)
     return candidates[0],len(candidates)
 
+NEWS_SCAN_SECONDS=4*3600  # A landing-page scan costs one provider request per batch.
+
+def news_batches(symbols):
+    """Group asset names into OR queries within the provider's 200-character limit."""
+    tail=') AND (crypto OR token OR blockchain)';batches=[];names=[];batch=[]
+    for s in symbols:
+        name='"'+ASSETS[s]+'"'
+        if names and len('('+' OR '.join(names+[name])+tail)>200:
+            batches.append(('('+' OR '.join(names)+tail,batch));names=[];batch=[]
+        names.append(name);batch.append(s)
+    if batch:batches.append(('('+' OR '.join(names)+tail,batch))
+    return batches
+
 class SignalEngine:
     def __init__(self,http,reserve_news=None):
         self.reserve_news=reserve_news
         self.http=http;self.cache={};self.locks={};self.market_cache=None
         self.news_lock=asyncio.Lock();self.next_news_request=0.0
+        self.today=('',{});self.next_scan=0.0;self.scan_code='NO_RELEVANT_NEWS_TODAY'
         self.news_request_interval=max(1.1,float(os.getenv('NEWS_REQUEST_INTERVAL_SECONDS','1.1')))
     async def get_json(self,url,params=None):
         try:
@@ -207,24 +221,54 @@ class SignalEngine:
         if cached and cached[0]>time.time():
             if isinstance(cached[1],DataUnavailable):raise cached[1]
             return cached[1]
+        found=self.found_today(now)
         try:
-            api_key=os.getenv('GNEWS_API_KEY','').strip()
-            if not api_key:raise DataUnavailable('NEWS_API_NOT_CONFIGURED')
-            delay=self.next_news_request-time.monotonic()
-            if delay>0:await asyncio.sleep(delay)
-            if self.reserve_news:self.reserve_news()
-            self.next_news_request=time.monotonic()+self.news_request_interval
-            query='"'+ASSETS[symbol]+'" AND (crypto OR token OR blockchain)'
-            data=await self.get_json('https://gnews.io/api/v4/search',{
-                'q':query,'lang':'en','max':10,'sortby':'relevance','in':'title,description',
-                'from':now.replace(hour=0,minute=0,second=0,microsecond=0).isoformat(),
-                'to':now.isoformat(),'apikey':api_key})
-            result=rank_news(data.get('articles',[]),symbol,now)
+            result=rank_news(await self.search('"'+ASSETS[symbol]+'" AND (crypto OR token OR blockchain)',now),symbol,now)
         except DataUnavailable as error:
-            # Missing articles must not consume a new provider request on every click.
-            self.cache[key]=(time.time()+300,error)
-            raise
+            # An article already found today (UTC) is still today's news for this asset.
+            result=found.get(symbol)
+            if not result:
+                # Missing articles must not consume a new provider request on every click.
+                self.cache[key]=(time.time()+300,error)
+                raise
+        found[symbol]=result
         self.cache[key]=(time.time()+900,result);return result
+    async def search(self,query,now):
+        api_key=os.getenv('GNEWS_API_KEY','').strip()
+        if not api_key:raise DataUnavailable('NEWS_API_NOT_CONFIGURED')
+        delay=self.next_news_request-time.monotonic()
+        if delay>0:await asyncio.sleep(delay)
+        if self.reserve_news:self.reserve_news()
+        self.next_news_request=time.monotonic()+self.news_request_interval
+        data=await self.get_json('https://gnews.io/api/v4/search',{
+            'q':query,'lang':'en','max':10,'sortby':'relevance','in':'title,description',
+            'from':now.replace(hour=0,minute=0,second=0,microsecond=0).isoformat(),
+            'to':now.isoformat(),'apikey':api_key})
+        return data.get('articles',[])
+    def found_today(self,now):
+        day=now.date().isoformat()
+        if self.today[0]!=day:self.today=(day,{});self.next_scan=0.0
+        return self.today[1]
+    async def news_today(self):
+        """Assets with relevant news today (UTC), from a few batched provider queries."""
+        async with self.news_lock:
+            now=datetime.now(timezone.utc);found=self.found_today(now)
+            if self.next_scan<=time.time():
+                try:
+                    markets=await self.markets()
+                    # Bitcoin goes with the other majors so it does not crowd out a batch of small assets.
+                    for query,batch in news_batches(sorted((s for s in ASSETS if s in markets),key=lambda s:s!='BTC')):
+                        articles=await self.search(query,now)
+                        for s in batch:
+                            if s in found:continue
+                            try:found[s]=rank_news(articles,s,now)
+                            except DataUnavailable:pass
+                    self.scan_code='NO_RELEVANT_NEWS_TODAY';self.next_scan=time.time()+NEWS_SCAN_SECONDS
+                except DataUnavailable as error:
+                    self.scan_code=error.code;self.next_scan=time.time()+300
+            # Availability only: paid headline/content are never exposed by this route.
+            return {'symbols':sorted(found),'code':'NEWS_AVAILABLE' if found else self.scan_code,
+                    'checked_at':now.isoformat()}
     async def optional_news(self,symbol):
         """An absent or unavailable news feed never blocks a technical report."""
         try:

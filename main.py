@@ -225,6 +225,11 @@ async def news_status(symbol:str):
     """Web selection check: availability only, no paid article or signal content."""
     return await app.state.engine.news_status(normalize_symbol(symbol))
 
+@app.get('/api/v1/news-today')
+async def news_today():
+    """Web landing check: which assets have relevant news today (UTC); no paid content."""
+    return await app.state.engine.news_today()
+
 
 def build_group(payer,req):
     algod=AlgodClient('',ALGOD)
