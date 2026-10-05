@@ -1,6 +1,7 @@
 # Quant Trading Signals
 
 COMMERCIAL WEBSITE: https://quanttrading-signals.com/
+
 Offial video: https://youtu.be/9dbpDODJvEA
 
 **5-minute technicals. Optional daily news on the web.**
